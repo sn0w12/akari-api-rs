@@ -1,0 +1,9 @@
+pub mod anilist;
+pub mod bookmark;
+pub mod chapter;
+pub mod comment;
+pub mod list;
+pub mod mal;
+pub mod manga_type;
+pub mod user;
+pub mod work;

@@ -1,0 +1,10 @@
+pub mod anilist;
+pub mod author;
+pub mod bookmarks;
+pub mod comments;
+pub mod genre;
+pub mod lists;
+pub mod mal;
+pub mod manga;
+pub mod notifications;
+pub mod user;

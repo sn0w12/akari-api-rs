@@ -1,0 +1,44 @@
+[package]
+name = "akari-api-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dev-dependencies]
+criterion = { version = "0.6", features = ["async_futures", "async_tokio"] }
+
+[[bench]]
+name = "handlers"
+harness = false
+
+[dependencies]
+async-trait = "0.1"
+axum = { version = "0.8.9", features = ["macros"] }
+axum-extra = { version = "0.10.1", features = ["cookie"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.6.4", features = ["derive", "env"] }
+dotenvy = "0.15"
+futures = "0.3.33"
+base64 = "0.22"
+aes = "0.8"
+cbc = "0.1"
+hex = "0.4"
+rand = "0.8"
+reqwest = { version = "0.12", features = ["json"] }
+ring = "0.17"
+sha2 = "0.10"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.9.0", features = [
+    "runtime-tokio",
+    "postgres",
+    "chrono",
+    "uuid"
+] }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.24.0", features = ["serde"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid", "macros"] }
