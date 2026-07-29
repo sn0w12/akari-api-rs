@@ -145,6 +145,7 @@ struct BookmarkDetailRow {
     work_id: Uuid,
     number: Option<f64>,
     title: Option<String>,
+    chapter_id: Option<Uuid>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -498,6 +499,7 @@ pub async fn get_bookmark(
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<BookmarkDetailResponse>>, ApiError> {
     let sql = "SELECT ule.work_id, \
+         c.id AS chapter_id, \
          c.number::double precision AS number, \
          c.title, \
          ule.created_at, ule.updated_at \
@@ -521,6 +523,7 @@ pub async fn get_bookmark(
             number: row.number.unwrap_or(0.0),
             pages: None,
             scanlator_id: None,
+            chapter_id: row.chapter_id,
             created_at: row.created_at,
             updated_at: row.updated_at,
         },

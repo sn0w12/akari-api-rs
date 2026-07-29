@@ -90,6 +90,8 @@ pub struct BookmarkDetailResponse {
     pub number: f64,
     pub pages: Option<i16>,
     pub scanlator_id: Option<i32>,
+    #[serde(rename = "chapterId")]
+    pub chapter_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
