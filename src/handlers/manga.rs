@@ -8,7 +8,9 @@ use uuid::Uuid;
 use crate::auth::{AuthUser, OptionalAuthUser};
 use crate::db::DbPool;
 use crate::error::{ApiError, ErrorResponseTemplate};
-use crate::models::chapter::{ChapterNavigation, ChapterOption, ChapterResponse, MangaChapter, Scanlator};
+use crate::models::chapter::{
+    ChapterNavigation, ChapterOption, ChapterResponse, MangaChapter, Scanlator,
+};
 use crate::models::manga_type::WorkFormat;
 use crate::models::work::{
     ChapterIdsResponse, MangaChapterResponse, MangaDetailResponse, MangaIdsResponse, MangaResponse,
@@ -81,11 +83,10 @@ struct MangaListRow {
     #[sqlx(rename = "format")]
     manga_type: String,
     genres: Vec<String>,
-    alternative_titles: Vec<String>,
+    alternative_titles: String,
     view_count: i64,
     score: Option<f64>,
-    mal_id: Option<String>,
-    ani_id: Option<String>,
+    trackers: String,
     preferred_scanlation_group_id: Option<i32>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -96,8 +97,6 @@ struct MangaListRow {
     total_count: i64,
 }
 
-
-
 impl From<MangaListRow> for MangaResponse {
     fn from(r: MangaListRow) -> Self {
         Self {
@@ -106,7 +105,7 @@ impl From<MangaListRow> for MangaResponse {
             cover: r.cover.unwrap_or_default(),
             description: r.description,
             status: r.status,
-                manga_type: WorkFormat::from(&r.manga_type as &str),
+            manga_type: WorkFormat::from(&r.manga_type as &str),
             authors: r.authors,
             genres: r.genres,
             views: r.view_count as i32,
@@ -114,13 +113,20 @@ impl From<MangaListRow> for MangaResponse {
                 average: r.score.unwrap_or(0.0),
                 total: r.rating_count.unwrap_or(0) as i32,
                 distribution: crate::models::work::MangaRatingDistribution {
-                    score1: 0, score2: 0, score3: 0, score4: 0, score5: 0,
-                    score6: 0, score7: 0, score8: 0, score9: 0, score10: 0,
+                    score1: 0,
+                    score2: 0,
+                    score3: 0,
+                    score4: 0,
+                    score5: 0,
+                    score6: 0,
+                    score7: 0,
+                    score8: 0,
+                    score9: 0,
+                    score10: 0,
                 },
             },
-            alternative_titles: r.alternative_titles,
-            mal_id: r.mal_id.and_then(|v| v.parse::<i32>().ok()),
-            ani_id: r.ani_id.and_then(|v| v.parse::<i32>().ok()),
+            alternative_titles: serde_json::from_str(&r.alternative_titles).unwrap_or_default(),
+            trackers: serde_json::from_str(&r.trackers).unwrap_or_default(),
             preferred_scanlator_id: r.preferred_scanlation_group_id,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -149,7 +155,10 @@ impl From<ChapterRow> for MangaChapter {
     fn from(r: ChapterRow) -> Self {
         Self {
             id: r.id,
-            title: r.title.clone().unwrap_or_else(|| format!("Chapter {}", r.number)),
+            title: r
+                .title
+                .clone()
+                .unwrap_or_else(|| format!("Chapter {}", r.number)),
             number: r.number,
             scanlator_id: r.scanlation_group_id.unwrap_or(0),
             pages: r.pages.map(|p| p as i32),
@@ -166,18 +175,16 @@ macro_rules! manga_full_sql {
              w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
              w.created_at, w.updated_at, \
              cov.url AS cover, auth.authors, alt.alternative_titles, \
-             mal.mal_id, ani.ani_id, r.rating_count, r.average_rating, \
+             tr.trackers, r.rating_count, r.average_rating, \
              0::bigint AS total_count \
              FROM public.works w \
              LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
              LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
                FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
-             LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(wt.title ORDER BY wt.language_code, wt.title_type), '{}'::text[]) AS alternative_titles \
+             LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
                FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
-             LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS mal_id \
-               FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'myanimelist' AND wt.work_id = w.id) mal ON TRUE \
-             LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS ani_id \
-               FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'anilist' AND wt.work_id = w.id) ani ON TRUE \
+             LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
+               FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
              LEFT JOIN LATERAL (SELECT COUNT(*)::bigint AS rating_count, COALESCE(AVG(rating), 0)::double precision AS average_rating \
                FROM public.work_ratings WHERE work_id = w.id) r ON TRUE ",
             $suffix,
@@ -194,12 +201,10 @@ FROM public.works w \
 LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
 LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
   FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
-LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(wt.title ORDER BY wt.language_code, wt.title_type), '{}'::text[]) AS alternative_titles \
+LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
   FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
-LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS mal_id \
-  FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'myanimelist' AND wt.work_id = w.id) mal ON TRUE \
-LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS ani_id \
-  FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'anilist' AND wt.work_id = w.id) ani ON TRUE \
+LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
+  FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
 LEFT JOIN LATERAL (SELECT COUNT(*)::bigint AS rating_count, COALESCE(AVG(rating), 0)::double precision AS average_rating \
   FROM public.work_ratings WHERE work_id = w.id) r ON TRUE";
 
@@ -271,8 +276,16 @@ pub async fn list_manga(
         genres: params.genres.clone().unwrap_or_default(),
         excluded_genres: params.excluded_genres.clone().unwrap_or_default(),
         authors: params.authors.clone().unwrap_or_default(),
-        types: params.types.clone().map(|v| v.into_iter().map(|t| t.as_str().to_string()).collect()).unwrap_or_default(),
-        excluded_types: params.excluded_types.clone().map(|v| v.into_iter().map(|t| t.as_str().to_string()).collect()).unwrap_or_default(),
+        types: params
+            .types
+            .clone()
+            .map(|v| v.into_iter().map(|t| t.as_str().to_string()).collect())
+            .unwrap_or_default(),
+        excluded_types: params
+            .excluded_types
+            .clone()
+            .map(|v| v.into_iter().map(|t| t.as_str().to_string()).collect())
+            .unwrap_or_default(),
         status: params.status.filter(|s| !s.is_empty()),
         search_query: if sort_by == "search" {
             params.query.filter(|s| !s.is_empty())
@@ -293,7 +306,7 @@ pub async fn list_manga(
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
          cov.url AS cover, auth.authors, alt.alternative_titles, \
-         mal.mal_id, ani.ani_id, r.rating_count, r.average_rating, \
+         tr.trackers, r.rating_count, r.average_rating, \
          COUNT(*) OVER() AS total_count ",
     );
     data_builder.push(MANGA_LIST_FROM);
@@ -372,7 +385,7 @@ pub async fn popular_manga(
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
          cov.url AS cover, auth.authors, alt.alternative_titles, \
-         mal.mal_id, ani.ani_id, r.rating_count, r.average_rating, \
+         tr.trackers, r.rating_count, r.average_rating, \
          COUNT(*) OVER() AS total_count ",
     );
     data_builder.push(MANGA_LIST_FROM);
@@ -420,7 +433,11 @@ pub async fn get_manga(
         .fetch_optional(&db)
         .await?
         .ok_or(ApiError::not_found("Manga not found"))?;
-    Ok(Json(SuccessResponse { result: "Success".to_string(), status: 200, data: manga_row.into() }))
+    Ok(Json(SuccessResponse {
+        result: "Success".to_string(),
+        status: 200,
+        data: manga_row.into(),
+    }))
 }
 
 /// GET /v2/manga/{id}/details
@@ -442,16 +459,24 @@ pub async fn manga_details(
     let chapters = fetch_chapters_for_work(&db, id).await?;
     let m: MangaResponse = manga_row.into();
     Ok(Json(SuccessResponse {
-        result: "Success".to_string(), status: 200,
+        result: "Success".to_string(),
+        status: 200,
         data: MangaDetailResponse {
-            id: m.id, title: m.title, cover: m.cover,
-            description: m.description, status: m.status,
-            manga_type: m.manga_type, authors: m.authors, genres: m.genres,
-            views: m.views, rating: m.rating,
+            id: m.id,
+            title: m.title,
+            cover: m.cover,
+            description: m.description,
+            status: m.status,
+            manga_type: m.manga_type,
+            authors: m.authors,
+            genres: m.genres,
+            views: m.views,
+            rating: m.rating,
             alternative_titles: m.alternative_titles,
-            mal_id: m.mal_id, ani_id: m.ani_id,
+            trackers: m.trackers.clone(),
             preferred_scanlator_id: m.preferred_scanlator_id,
-            created_at: m.created_at, updated_at: m.updated_at,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
             chapters,
         },
     }))
@@ -521,22 +546,20 @@ async fn batch_by_tracker(
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
          cov.url AS cover, auth.authors, alt.alternative_titles, \
-         mal.mal_id, ani.ani_id, r.rating_count, r.average_rating, \
+         tr.trackers, r.rating_count, r.average_rating, \
          0::bigint AS total_count \
-         FROM public.works w \
-         LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
-         LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
-           FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
-         LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(wt.title ORDER BY wt.language_code, wt.title_type), '{}'::text[]) AS alternative_titles \
-           FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
-         LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS mal_id \
-           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'myanimelist' AND wt.work_id = w.id) mal ON TRUE \
-         LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS ani_id \
-           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'anilist' AND wt.work_id = w.id) ani ON TRUE \
-         LEFT JOIN LATERAL (SELECT COUNT(*)::bigint AS rating_count, COALESCE(AVG(rating), 0)::double precision AS average_rating \
-           FROM public.work_ratings WHERE work_id = w.id) r ON TRUE \
-         WHERE w.id IN (SELECT wt2.work_id FROM public.work_trackers wt2 \
-           JOIN public.trackers t2 ON t2.id = wt2.tracker_id WHERE t2.code = "
+          FROM public.works w \
+          LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+          LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
+            FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
+          LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
+            FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
+          LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
+            FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
+          LEFT JOIN LATERAL (SELECT COUNT(*)::bigint AS rating_count, COALESCE(AVG(rating), 0)::double precision AS average_rating \
+            FROM public.work_ratings WHERE work_id = w.id) r ON TRUE \
+          WHERE w.id IN (SELECT wt2.work_id FROM public.work_trackers wt2 \
+            JOIN public.trackers t2 ON t2.id = wt2.tracker_id WHERE t2.code = ",
     );
     builder.push_bind(tracker_code);
     builder.push(" AND wt2.tracker_work_id = ANY(");
@@ -562,7 +585,11 @@ pub async fn batch_by_mal(
     }
     let ids: Vec<String> = body.mal_ids.iter().map(|i| i.to_string()).collect();
     let items = batch_by_tracker(&db, "myanimelist", &ids).await?;
-    Ok(Json(SuccessResponse { result: "Success".to_string(), status: 200, data: items }))
+    Ok(Json(SuccessResponse {
+        result: "Success".to_string(),
+        status: 200,
+        data: items,
+    }))
 }
 
 /// POST /v2/manga/ani/batch
@@ -580,7 +607,11 @@ pub async fn batch_by_ani(
     }
     let ids: Vec<String> = body.ani_ids.iter().map(|i| i.to_string()).collect();
     let items = batch_by_tracker(&db, "anilist", &ids).await?;
-    Ok(Json(SuccessResponse { result: "Success".to_string(), status: 200, data: items }))
+    Ok(Json(SuccessResponse {
+        result: "Success".to_string(),
+        status: 200,
+        data: items,
+    }))
 }
 
 /// GET /v2/manga/{id}/recommendations
@@ -599,21 +630,19 @@ pub async fn manga_recommendations(
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
          cov.url AS cover, auth.authors, alt.alternative_titles, \
-         mal.mal_id, ani.ani_id, r.rating_count, r.average_rating, \
+         tr.trackers, r.rating_count, r.average_rating, \
          0::bigint AS total_count \
          FROM public.works w \
          LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
            FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
-         LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(wt.title ORDER BY wt.language_code, wt.title_type), '{}'::text[]) AS alternative_titles \
-           FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
-         LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS mal_id \
-           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'myanimelist' AND wt.work_id = w.id) mal ON TRUE \
-         LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS ani_id \
-           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'anilist' AND wt.work_id = w.id) ani ON TRUE \
-         LEFT JOIN LATERAL (SELECT COUNT(*)::bigint AS rating_count, COALESCE(AVG(rating), 0)::double precision AS average_rating \
-           FROM public.work_ratings WHERE work_id = w.id) r ON TRUE \
-         WHERE w.id != $1 AND w.genres && (SELECT genres FROM public.works WHERE id = $1) \
+          LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
+            FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
+          LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
+            FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
+          LEFT JOIN LATERAL (SELECT COUNT(*)::bigint AS rating_count, COALESCE(AVG(rating), 0)::double precision AS average_rating \
+            FROM public.work_ratings WHERE work_id = w.id) r ON TRUE \
+          WHERE w.id != $1 AND w.genres && (SELECT genres FROM public.works WHERE id = $1) \
          ORDER BY RANDOM() LIMIT $2";
 
     let rows: Vec<MangaListRow> = sqlx::query_as::<_, MangaListRow>(sql)
@@ -646,11 +675,16 @@ pub async fn search_manga(
     let items: Vec<MangaSearchResponse> = if let Some(ref q) = query {
         const SQL: &str = "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, w.view_count, w.score::double precision AS score, \
              w.created_at, w.updated_at, cov.url AS cover, auth.authors, \
+             alt.alternative_titles, tr.trackers, \
              ts_rank(w.search_vector, plainto_tsquery('english', $1))::double precision AS rank \
              FROM public.works w \
              LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
              LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
                FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
+             LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
+               FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
+             LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
+               FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
              WHERE w.search_vector @@ plainto_tsquery('english', $1) \
              ORDER BY rank DESC \
              LIMIT $2";
@@ -670,6 +704,8 @@ pub async fn search_manga(
             updated_at: DateTime<Utc>,
             cover: Option<String>,
             authors: Vec<String>,
+            alternative_titles: String,
+            trackers: String,
             rank: f64,
         }
 
@@ -686,7 +722,7 @@ pub async fn search_manga(
                 cover: r.cover.unwrap_or_default(),
                 description: r.description,
                 status: r.status,
-            manga_type: WorkFormat::from(&r.manga_type as &str),
+                manga_type: WorkFormat::from(&r.manga_type as &str),
                 authors: r.authors,
                 genres: r.genres,
                 views: r.view_count as i32,
@@ -694,13 +730,20 @@ pub async fn search_manga(
                     average: r.score.unwrap_or(0.0),
                     total: 0,
                     distribution: crate::models::work::MangaRatingDistribution {
-                        score1: 0, score2: 0, score3: 0, score4: 0, score5: 0,
-                        score6: 0, score7: 0, score8: 0, score9: 0, score10: 0,
+                        score1: 0,
+                        score2: 0,
+                        score3: 0,
+                        score4: 0,
+                        score5: 0,
+                        score6: 0,
+                        score7: 0,
+                        score8: 0,
+                        score9: 0,
+                        score10: 0,
                     },
                 },
-                alternative_titles: Vec::new(),
-                mal_id: None,
-                ani_id: None,
+                alternative_titles: serde_json::from_str(&r.alternative_titles).unwrap_or_default(),
+                trackers: serde_json::from_str(&r.trackers).unwrap_or_default(),
                 preferred_scanlator_id: None,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
@@ -766,11 +809,29 @@ pub async fn global_chapter_ids(
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<MangaIdsResponse>>, ApiError> {
     let (page, page_size, offset) = pagination(params.page, params.page_size);
-    let total_count: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT work_id) FROM public.chapters").fetch_one(&db).await?;
+    let total_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(DISTINCT work_id) FROM public.chapters")
+            .fetch_one(&db)
+            .await?;
     let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
-    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT work_id FROM public.chapters ORDER BY work_id LIMIT $1 OFFSET $2")
-        .bind(page_size as i64).bind(offset).fetch_all(&db).await?;
-    Ok(Json(SuccessResponse { result: "Success".to_string(), status: 200, data: MangaIdsResponse { items: ids, total_items: total_count, current_page: page, page_size, total_pages } }))
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT DISTINCT work_id FROM public.chapters ORDER BY work_id LIMIT $1 OFFSET $2",
+    )
+    .bind(page_size as i64)
+    .bind(offset)
+    .fetch_all(&db)
+    .await?;
+    Ok(Json(SuccessResponse {
+        result: "Success".to_string(),
+        status: 200,
+        data: MangaIdsResponse {
+            items: ids,
+            total_items: total_count,
+            current_page: page,
+            page_size,
+            total_pages,
+        },
+    }))
 }
 
 /// GET /v2/manga/{id}/chapter-ids
@@ -884,14 +945,21 @@ pub async fn by_ani_id(
 fn flatten_manga_detail(row: MangaListRow, chapters: Vec<MangaChapter>) -> MangaDetailResponse {
     let m: MangaResponse = row.into();
     MangaDetailResponse {
-        id: m.id, title: m.title, cover: m.cover,
-        description: m.description, status: m.status,
-        manga_type: m.manga_type, authors: m.authors, genres: m.genres,
-        views: m.views, rating: m.rating,
+        id: m.id,
+        title: m.title,
+        cover: m.cover,
+        description: m.description,
+        status: m.status,
+        manga_type: m.manga_type,
+        authors: m.authors,
+        genres: m.genres,
+        views: m.views,
+        rating: m.rating,
         alternative_titles: m.alternative_titles,
-        mal_id: m.mal_id, ani_id: m.ani_id,
+        trackers: m.trackers.clone(),
         preferred_scanlator_id: m.preferred_scanlator_id,
-        created_at: m.created_at, updated_at: m.updated_at,
+        created_at: m.created_at,
+        updated_at: m.updated_at,
         chapters,
     }
 }
@@ -1030,20 +1098,31 @@ pub async fn chapter_detail(
     let chapter_options: Vec<ChapterOption> = list_rows
         .into_iter()
         .map(|r| ChapterOption {
-            label: r.title.clone().unwrap_or_else(|| format!("Ch. {}", r.number)),
+            label: r
+                .title
+                .clone()
+                .unwrap_or_else(|| format!("Ch. {}", r.number)),
             value: r.number.to_string(),
             scanlator_id: r.scanlation_group_id.unwrap_or(0),
         })
         .collect();
 
     // Get work title + format
-    let (work_title, work_format): (String, String) = sqlx::query_as(
-        "SELECT title, format FROM public.works WHERE id = $1",
+    let (work_title, work_format): (String, String) =
+        sqlx::query_as("SELECT title, format FROM public.works WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&db)
+            .await?
+            .unwrap_or_default();
+
+    // Get trackers
+    let trackers: String = sqlx::query_scalar(
+        "SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text \
+         FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = $1",
     )
     .bind(id)
-    .fetch_optional(&db)
-    .await?
-    .unwrap_or_default();
+    .fetch_one(&db)
+    .await?;
 
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),
@@ -1052,16 +1131,23 @@ pub async fn chapter_detail(
             id: chapter_row.id,
             manga_type: WorkFormat::from(&work_format as &str),
             pages: chapter_row.pages.unwrap_or(0) as i32,
-            title: chapter_row.title.unwrap_or_else(|| format!("Chapter {}", chapter_row.number)),
+            title: chapter_row
+                .title
+                .unwrap_or_else(|| format!("Chapter {}", chapter_row.number)),
             images: chapter_row.images,
             number: chapter_row.number,
             chapters: chapter_options,
             work_id: id,
             work_title,
-            last_chapter: prev_num.map(|n| ChapterNavigation { number: n, scanlator_id: sg_id.unwrap_or(0) }),
-            next_chapter: next_num.map(|n| ChapterNavigation { number: n, scanlator_id: sg_id.unwrap_or(0) }),
-            mal_id: None,
-            ani_id: None,
+            last_chapter: prev_num.map(|n| ChapterNavigation {
+                number: n,
+                scanlator_id: sg_id.unwrap_or(0),
+            }),
+            next_chapter: next_num.map(|n| ChapterNavigation {
+                number: n,
+                scanlator_id: sg_id.unwrap_or(0),
+            }),
+            trackers: serde_json::from_str(&trackers).unwrap_or_default(),
         },
     }))
 }
@@ -1155,7 +1241,11 @@ pub async fn recently_viewed(
     .await?;
 
     if work_ids.is_empty() {
-        return Ok(Json(SuccessResponse { result: "Success".to_string(), status: 200, data: vec![] }));
+        return Ok(Json(SuccessResponse {
+            result: "Success".to_string(),
+            status: 200,
+            data: vec![],
+        }));
     }
 
     let rows: Vec<MangaListRow> = sqlx::query_as::<_, MangaListRow>(
@@ -1163,19 +1253,17 @@ pub async fn recently_viewed(
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
          cov.url AS cover, auth.authors, alt.alternative_titles, \
-         mal.mal_id, ani.ani_id, r.rating_count, r.average_rating, \
+         tr.trackers, r.rating_count, r.average_rating, \
          0::bigint AS total_count \
          FROM public.works w \
          LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
            FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
-         LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(wt.title ORDER BY wt.language_code, wt.title_type), '{}'::text[]) AS alternative_titles \
-           FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
-         LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS mal_id \
-           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'myanimelist' AND wt.work_id = w.id) mal ON TRUE \
-         LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS ani_id \
-           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'anilist' AND wt.work_id = w.id) ani ON TRUE \
-         LEFT JOIN LATERAL (SELECT COUNT(*)::bigint AS rating_count, COALESCE(AVG(rating), 0)::double precision AS average_rating \
+          LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
+            FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
+          LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
+            FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
+          LEFT JOIN LATERAL (SELECT COUNT(*)::bigint AS rating_count, COALESCE(AVG(rating), 0)::double precision AS average_rating \
            FROM public.work_ratings WHERE work_id = w.id) r ON TRUE \
          WHERE w.id = ANY($1) ORDER BY w.title",
     )
@@ -1184,7 +1272,8 @@ pub async fn recently_viewed(
     .await?;
 
     Ok(Json(SuccessResponse {
-        result: "Success".to_string(), status: 200,
+        result: "Success".to_string(),
+        status: 200,
         data: rows.into_iter().map(Into::into).collect(),
     }))
 }
@@ -1248,7 +1337,9 @@ pub async fn get_rating(
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),
         status: 200,
-        data: RatingResponse { rating: rating.map(|r| r as i32) },
+        data: RatingResponse {
+            rating: rating.map(|r| r as i32),
+        },
     }))
 }
 

@@ -1,10 +1,10 @@
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Serialize;
 
 use crate::db::DbPool;
 use crate::error::{ApiError, ErrorResponseTemplate};
-use crate::handlers::manga::{list_manga, MangaListParams};
+use crate::handlers::manga::{MangaListParams, list_manga};
 use crate::models::work::MangaResponse;
 use crate::response::{PaginatedResponse, SuccessResponse};
 
@@ -24,7 +24,8 @@ pub async fn manga_by_genre(
     Path(name): Path<String>,
     Query(params): Query<MangaListParams>,
     State(db): State<DbPool>,
-) -> Result<Json<SuccessResponse<PaginatedResponse<crate::models::work::MangaResponse>>>, ApiError> {
+) -> Result<Json<SuccessResponse<PaginatedResponse<crate::models::work::MangaResponse>>>, ApiError>
+{
     let mut p = params;
     p.genres = Some(vec![name]);
     list_manga(Query(p), State(db)).await

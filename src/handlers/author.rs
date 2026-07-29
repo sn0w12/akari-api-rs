@@ -1,5 +1,5 @@
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -31,7 +31,8 @@ pub async fn manga_by_author(
     Path(name): Path<String>,
     Query(params): Query<crate::handlers::manga::MangaListParams>,
     State(db): State<DbPool>,
-) -> Result<Json<SuccessResponse<PaginatedResponse<crate::models::work::MangaResponse>>>, ApiError> {
+) -> Result<Json<SuccessResponse<PaginatedResponse<crate::models::work::MangaResponse>>>, ApiError>
+{
     let mut p = params;
     p.authors = Some(vec![name]);
     crate::handlers::manga::list_manga(axum::extract::Query(p), State(db)).await
@@ -69,7 +70,10 @@ pub async fn list_authors(
     .fetch_all(&db)
     .await?
     .into_iter()
-    .map(|(name, count)| AuthorResponse { name, manga_count: count })
+    .map(|(name, count)| AuthorResponse {
+        name,
+        manga_count: count,
+    })
     .collect();
 
     Ok(Json(SuccessResponse {

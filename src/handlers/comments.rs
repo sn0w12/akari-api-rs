@@ -9,7 +9,9 @@ use crate::auth::AuthUser;
 use crate::banned_words;
 use crate::db::DbPool;
 use crate::error::{ApiError, ErrorResponseTemplate};
-use crate::models::comment::{CommentResponse, CommentSortOrder, CommentVoteResponse, PaginatedCommentResponse};
+use crate::models::comment::{
+    CommentResponse, CommentSortOrder, CommentVoteResponse, PaginatedCommentResponse,
+};
 use crate::response::ItemsResponse;
 use crate::response::SuccessResponse;
 
@@ -193,8 +195,9 @@ pub async fn get_comment_replies(
     .fetch_all(&db)
     .await?;
 
-    let items: Vec<CommentResponse> = rows.into_iter().map(|r| {
-        CommentResponse {
+    let items: Vec<CommentResponse> = rows
+        .into_iter()
+        .map(|r| CommentResponse {
             id: r.id,
             target_type: r.target_type,
             target_id: r.target_id,
@@ -214,9 +217,13 @@ pub async fn get_comment_replies(
             upvotes: r.upvotes,
             downvotes: r.downvotes,
             reply_count: r.reply_count,
-        }
-    }).collect();
-    Ok(Json(SuccessResponse { result: "Success".to_string(), status: 200, data: items }))
+        })
+        .collect();
+    Ok(Json(SuccessResponse {
+        result: "Success".to_string(),
+        status: 200,
+        data: items,
+    }))
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -300,7 +307,10 @@ pub async fn create_comment(
         user_profile: crate::models::comment::UserProfile {
             id: user.id.clone(),
             username: user.username.clone(),
-            display_name: user.display_name.clone().unwrap_or_else(|| user.username.clone()),
+            display_name: user
+                .display_name
+                .clone()
+                .unwrap_or_else(|| user.username.clone()),
             role: user.role.clone().unwrap_or_else(|| "user".to_string()),
             banned: user.banned.unwrap_or(false),
         },
@@ -531,12 +541,11 @@ pub async fn report_comment(
     State(db): State<DbPool>,
     Json(body): Json<ReportBody>,
 ) -> Result<Json<SuccessResponse<serde_json::Value>>, ApiError> {
-    let comment: Option<(String,)> = sqlx::query_as(
-        "SELECT user_id FROM public.comments WHERE id = $1 AND deleted = FALSE",
-    )
-    .bind(comment_id)
-    .fetch_optional(&db)
-    .await?;
+    let comment: Option<(String,)> =
+        sqlx::query_as("SELECT user_id FROM public.comments WHERE id = $1 AND deleted = FALSE")
+            .bind(comment_id)
+            .fetch_optional(&db)
+            .await?;
 
     let (author_id,) = comment.ok_or(ApiError::not_found("Comment not found"))?;
 
@@ -616,5 +625,3 @@ pub async fn get_votes(
         data: ItemsResponse { items },
     }))
 }
-
-

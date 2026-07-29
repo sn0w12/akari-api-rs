@@ -70,20 +70,30 @@ pub struct CommentVoteResponse {
 #[serde(rename_all = "camelCase")]
 pub struct CommentWithRepliesResponse {
     pub id: Uuid,
-    #[serde(rename = "targetType")] pub target_type: String,
-    #[serde(rename = "targetId")] pub target_id: Uuid,
-    #[serde(rename = "userProfile")] pub user_profile: UserProfile,
-    #[serde(rename = "parentId")] pub parent_id: Option<Uuid>,
+    #[serde(rename = "targetType")]
+    pub target_type: String,
+    #[serde(rename = "targetId")]
+    pub target_id: Uuid,
+    #[serde(rename = "userProfile")]
+    pub user_profile: UserProfile,
+    #[serde(rename = "parentId")]
+    pub parent_id: Option<Uuid>,
     pub content: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub edited: bool, pub deleted: bool,
-    pub upvotes: i32, pub downvotes: i32,
+    pub edited: bool,
+    pub deleted: bool,
+    pub upvotes: i32,
+    pub downvotes: i32,
     #[schema(value_type = Vec<CommentResponse>)]
     pub replies: Vec<CommentWithRepliesResponse>,
 }
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub enum CommentReportReason {
-    Spam, Harassment, Inappropriate, HateSpeech, Other,
+    Spam,
+    Harassment,
+    Inappropriate,
+    HateSpeech,
+    Other,
 }

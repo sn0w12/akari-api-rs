@@ -64,11 +64,15 @@ pub async fn user_profile(
             user_id: row.id,
             display_name: row.display_username.clone().unwrap_or(row.name.clone()),
             username: row.name,
-            role: row.role.as_deref().map(|r| match r {
-                "admin" => UserRole::Admin,
-                "owner" => UserRole::Owner,
-                _ => UserRole::User,
-            }).unwrap_or(UserRole::User),
+            role: row
+                .role
+                .as_deref()
+                .map(|r| match r {
+                    "admin" => UserRole::Admin,
+                    "owner" => UserRole::Owner,
+                    _ => UserRole::User,
+                })
+                .unwrap_or(UserRole::User),
             banned: row.banned.unwrap_or(false),
             created_at: Some(row.created_at),
             total_comments: Some(row.total_comments),
@@ -132,11 +136,15 @@ pub async fn list_users(
             user_id: r.id,
             display_name: r.display_username.clone().unwrap_or(r.name.clone()),
             username: r.name,
-            role: r.role.as_deref().map(|r| match r {
-                "admin" => UserRole::Admin,
-                "owner" => UserRole::Owner,
-                _ => UserRole::User,
-            }).unwrap_or(UserRole::User),
+            role: r
+                .role
+                .as_deref()
+                .map(|r| match r {
+                    "admin" => UserRole::Admin,
+                    "owner" => UserRole::Owner,
+                    _ => UserRole::User,
+                })
+                .unwrap_or(UserRole::User),
             banned: r.banned.unwrap_or(false),
             created_at: Some(r.created_at),
             total_comments: Some(r.total_comments),
@@ -182,11 +190,15 @@ pub async fn me(user: AuthUser) -> Result<Json<SuccessResponse<UserResponse>>, A
             user_id: user.id,
             username: user.username.clone(),
             display_name: user.display_name.clone().unwrap_or(user.username.clone()),
-            role: user.role.as_deref().map(|r| match r {
-                "admin" => UserRole::Admin,
-                "owner" => UserRole::Owner,
-                _ => UserRole::User,
-            }).unwrap_or(UserRole::User),
+            role: user
+                .role
+                .as_deref()
+                .map(|r| match r {
+                    "admin" => UserRole::Admin,
+                    "owner" => UserRole::Owner,
+                    _ => UserRole::User,
+                })
+                .unwrap_or(UserRole::User),
             banned: user.banned.unwrap_or(false),
         },
     }))

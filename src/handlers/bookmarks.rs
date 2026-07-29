@@ -49,8 +49,6 @@ fn pagination(page: Option<i32>, page_size: Option<i32>) -> (i32, i32, i64) {
 use crate::models::chapter::MangaChapter;
 use crate::models::manga_type::WorkFormat;
 
-
-
 #[derive(Debug, sqlx::FromRow)]
 struct BookmarkRow {
     work_id: Uuid,
@@ -61,11 +59,10 @@ struct BookmarkRow {
     manga_type: String,
     genres: Vec<String>,
     authors: Vec<String>,
-    alternative_titles: Vec<String>,
+    alternative_titles: String,
     view_count: i64,
     score: Option<f64>,
-    mal_id: Option<String>,
-    ani_id: Option<String>,
+    trackers: String,
     cover: Option<String>,
     work_created_at: DateTime<Utc>,
     work_updated_at: DateTime<Utc>,
@@ -102,9 +99,13 @@ impl BookmarkRow {
     fn last_read(&self) -> MangaChapter {
         MangaChapter {
             id: self.lr_id.unwrap_or_default(),
-            title: self.lr_title.clone().unwrap_or_else(|| format!("Chapter {}", self.lr_number.unwrap_or(0.0))),
+            title: self
+                .lr_title
+                .clone()
+                .unwrap_or_else(|| format!("Chapter {}", self.lr_number.unwrap_or(0.0))),
             number: self.lr_number.unwrap_or(0.0),
-            scanlator_id: self.lr_scanlation_group_id.unwrap_or(0), pages: self.lr_pages.map(|p| p as i32),
+            scanlator_id: self.lr_scanlation_group_id.unwrap_or(0),
+            pages: self.lr_pages.map(|p| p as i32),
             created_at: self.lr_created_at.unwrap_or(self.updated_at),
             updated_at: self.lr_updated_at.unwrap_or(self.updated_at),
         }
@@ -112,9 +113,13 @@ impl BookmarkRow {
     fn latest_ch(&self) -> MangaChapter {
         MangaChapter {
             id: self.lt_id.unwrap_or_default(),
-            title: self.lt_title.clone().unwrap_or_else(|| format!("Chapter {}", self.lt_number.unwrap_or(0.0))),
+            title: self
+                .lt_title
+                .clone()
+                .unwrap_or_else(|| format!("Chapter {}", self.lt_number.unwrap_or(0.0))),
             number: self.lt_number.unwrap_or(0.0),
-            scanlator_id: self.lt_scanlation_group_id.unwrap_or(0), pages: self.lt_pages.map(|p| p as i32),
+            scanlator_id: self.lt_scanlation_group_id.unwrap_or(0),
+            pages: self.lt_pages.map(|p| p as i32),
             created_at: self.lt_created_at.unwrap_or(self.updated_at),
             updated_at: self.lt_updated_at.unwrap_or(self.updated_at),
         }
@@ -122,9 +127,13 @@ impl BookmarkRow {
     fn next_ch(&self) -> MangaChapter {
         MangaChapter {
             id: self.nx_id.unwrap_or_default(),
-            title: self.nx_title.clone().unwrap_or_else(|| format!("Chapter {}", self.nx_number.unwrap_or(0.0))),
+            title: self
+                .nx_title
+                .clone()
+                .unwrap_or_else(|| format!("Chapter {}", self.nx_number.unwrap_or(0.0))),
             number: self.nx_number.unwrap_or(0.0),
-            scanlator_id: self.nx_scanlation_group_id.unwrap_or(0), pages: self.nx_pages.map(|p| p as i32),
+            scanlator_id: self.nx_scanlation_group_id.unwrap_or(0),
+            pages: self.nx_pages.map(|p| p as i32),
             created_at: self.nx_created_at.unwrap_or(self.updated_at),
             updated_at: self.nx_updated_at.unwrap_or(self.updated_at),
         }
@@ -166,7 +175,7 @@ pub async fn list_bookmarks(
          w.created_at AS work_created_at, w.updated_at AS work_updated_at, \
          cov.url AS cover, \
          auth.authors, alt.alternative_titles, \
-         mal.mal_id, ani.ani_id, \
+         tr.trackers, \
          c.id AS lr_id, c.title AS lr_title, c.number::double precision AS lr_number, \
          c.pages AS lr_pages, c.scanlation_group_id AS lr_scanlation_group_id, \
          c.created_at AS lr_created_at, c.updated_at AS lr_updated_at, \
@@ -185,12 +194,10 @@ pub async fn list_bookmarks(
          LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
            FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
-         LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(wt.title ORDER BY wt.language_code, wt.title_type), '{}'::text[]) AS alternative_titles \
+         LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
            FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
-         LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS mal_id \
-           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'myanimelist' AND wt.work_id = w.id) mal ON TRUE \
-         LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS ani_id \
-           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'anilist' AND wt.work_id = w.id) ani ON TRUE \
+         LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
+           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
          LEFT JOIN public.chapters c ON c.id = ule.last_read_chapter_id \
          LEFT JOIN LATERAL (SELECT id, title, number, pages, scanlation_group_id, created_at, updated_at \
            FROM public.chapters WHERE work_id = ule.work_id ORDER BY number DESC LIMIT 1) latest ON TRUE \
@@ -224,9 +231,8 @@ pub async fn list_bookmarks(
                 genres: r.genres,
                 views: r.view_count as i32,
                 score: r.score.unwrap_or(0.0),
-                mal_id: r.mal_id.and_then(|v| v.parse::<i32>().ok()),
-                ani_id: r.ani_id.and_then(|v| v.parse::<i32>().ok()),
-                alternative_titles: r.alternative_titles,
+                trackers: serde_json::from_str(&r.trackers).unwrap_or_default(),
+                alternative_titles: serde_json::from_str(&r.alternative_titles).unwrap_or_default(),
                 work_created_at: r.work_created_at,
                 work_updated_at: r.work_updated_at,
                 last_read_chapter: lr,
@@ -283,7 +289,7 @@ pub async fn search_bookmarks(
          w.created_at AS work_created_at, w.updated_at AS work_updated_at, \
          cov.url AS cover, \
          auth.authors, alt.alternative_titles, \
-         mal.mal_id, ani.ani_id, \
+         tr.trackers, \
          c.id AS lr_id, c.title AS lr_title, c.number::double precision AS lr_number, \
          c.pages AS lr_pages, c.scanlation_group_id AS lr_scanlation_group_id, \
          c.created_at AS lr_created_at, c.updated_at AS lr_updated_at, \
@@ -302,12 +308,10 @@ pub async fn search_bookmarks(
          LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
            FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
-         LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(wt.title ORDER BY wt.language_code, wt.title_type), '{}'::text[]) AS alternative_titles \
+         LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
            FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
-         LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS mal_id \
-           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'myanimelist' AND wt.work_id = w.id) mal ON TRUE \
-         LEFT JOIN LATERAL (SELECT wt.tracker_work_id AS ani_id \
-           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE t.code = 'anilist' AND wt.work_id = w.id) ani ON TRUE \
+         LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
+           FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
          LEFT JOIN public.chapters c ON c.id = ule.last_read_chapter_id \
          LEFT JOIN LATERAL (SELECT id, title, number, pages, scanlation_group_id, created_at, updated_at \
            FROM public.chapters WHERE work_id = ule.work_id ORDER BY number DESC LIMIT 1) latest ON TRUE \
@@ -342,9 +346,8 @@ pub async fn search_bookmarks(
                 genres: r.genres,
                 views: r.view_count as i32,
                 score: r.score.unwrap_or(0.0),
-                mal_id: r.mal_id.and_then(|v| v.parse::<i32>().ok()),
-                ani_id: r.ani_id.and_then(|v| v.parse::<i32>().ok()),
-                alternative_titles: r.alternative_titles,
+                trackers: serde_json::from_str(&r.trackers).unwrap_or_default(),
+                alternative_titles: serde_json::from_str(&r.alternative_titles).unwrap_or_default(),
                 work_created_at: r.work_created_at,
                 work_updated_at: r.work_updated_at,
                 last_read_chapter: lr,
@@ -494,7 +497,7 @@ pub async fn get_bookmark(
     Path(work_id): Path<Uuid>,
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<BookmarkDetailResponse>>, ApiError> {
-    let sql =         "SELECT ule.work_id, \
+    let sql = "SELECT ule.work_id, \
          c.number::double precision AS number, \
          c.title, \
          ule.created_at, ule.updated_at \
@@ -745,7 +748,10 @@ pub async fn reading_stats(
     .fetch_all(&db)
     .await?
     .into_iter()
-    .map(|(dow, count)| DayOfWeekReadCount { day_of_week: dow, count })
+    .map(|(dow, count)| DayOfWeekReadCount {
+        day_of_week: dow,
+        count,
+    })
     .collect();
 
     // Reads by hour (0-23)

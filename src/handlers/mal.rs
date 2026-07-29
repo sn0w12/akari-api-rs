@@ -38,10 +38,14 @@ pub struct MalMangaListQuery {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MalTokenResponse {
-    #[serde(alias = "access_token")] pub access_token: String,
-    #[serde(alias = "refresh_token")] pub refresh_token: String,
-    #[serde(alias = "expires_in")] pub expires_in: i32,
-    #[serde(alias = "token_type")] pub token_type: String,
+    #[serde(alias = "access_token")]
+    pub access_token: String,
+    #[serde(alias = "refresh_token")]
+    pub refresh_token: String,
+    #[serde(alias = "expires_in")]
+    pub expires_in: i32,
+    #[serde(alias = "token_type")]
+    pub token_type: String,
 }
 
 /// Helper: set a cookie header value for the response in the format expected by Set-Cookie.

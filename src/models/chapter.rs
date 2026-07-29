@@ -37,8 +37,7 @@ pub struct ChapterResponse {
     pub work_title: String,
     pub last_chapter: Option<ChapterNavigation>,
     pub next_chapter: Option<ChapterNavigation>,
-    pub mal_id: Option<i32>,
-    pub ani_id: Option<i32>,
+    pub trackers: Vec<super::work::TrackerItem>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

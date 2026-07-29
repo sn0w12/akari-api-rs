@@ -98,6 +98,8 @@ use crate::models::work::*;
             MangaSearchResponse,
             MangaIdsResponse,
             RatingResponse,
+            TrackerItem,
+            AlternativeTitle,
             ChapterResponse,
             ChapterNavigation,
 

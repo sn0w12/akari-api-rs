@@ -2,8 +2,8 @@ use axum::Json;
 use axum::extract::State;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::config::Config;

@@ -18,7 +18,11 @@ impl<T: Serialize + ToSchema> IntoResponse for SuccessResponse<T> {
 
 impl<T: Serialize + ToSchema> SuccessResponse<T> {
     pub fn new(data: T) -> Self {
-        Self { result: "Success".to_string(), status: 200, data }
+        Self {
+            result: "Success".to_string(),
+            status: 200,
+            data,
+        }
     }
 }
 
@@ -30,8 +34,12 @@ pub struct ItemsResponse<T: Serialize + ToSchema> {
 #[derive(Serialize, ToSchema)]
 pub struct PaginatedResponse<T: Serialize + ToSchema> {
     pub items: Vec<T>,
-    #[serde(rename = "totalItems")] pub total_items: i64,
-    #[serde(rename = "currentPage")] pub current_page: i32,
-    #[serde(rename = "pageSize")] pub page_size: i32,
-    #[serde(rename = "totalPages")] pub total_pages: i32,
+    #[serde(rename = "totalItems")]
+    pub total_items: i64,
+    #[serde(rename = "currentPage")]
+    pub current_page: i32,
+    #[serde(rename = "pageSize")]
+    pub page_size: i32,
+    #[serde(rename = "totalPages")]
+    pub total_pages: i32,
 }

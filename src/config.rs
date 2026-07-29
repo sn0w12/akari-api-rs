@@ -27,7 +27,10 @@ impl Config {
         Self {
             database_url: env("DATABASE_URL"),
             host: std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
-            port: std::env::var("PORT").unwrap_or_else(|_| "3000".to_string()).parse().unwrap(),
+            port: std::env::var("PORT")
+                .unwrap_or_else(|_| "3000".to_string())
+                .parse()
+                .unwrap(),
             api_key: env("API_KEY"),
             encryption_key: key,
             mal_client_id: env("MAL_CLIENT_ID"),
