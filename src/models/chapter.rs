@@ -30,7 +30,8 @@ pub struct ChapterResponse {
     pub title: String,
     pub images: Vec<String>,
     pub number: f64,
-    pub chapters: Vec<ChapterOption>,
+    pub chapters: Vec<MangaChapter>,
+    pub scanlator: Option<Scanlator>,
     #[serde(rename = "mangaId")]
     pub work_id: Uuid,
     #[serde(rename = "mangaTitle")]

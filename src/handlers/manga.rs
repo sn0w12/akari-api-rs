@@ -9,7 +9,7 @@ use crate::auth::{AuthUser, OptionalAuthUser};
 use crate::db::DbPool;
 use crate::error::{ApiError, ErrorResponseTemplate};
 use crate::models::chapter::{
-    ChapterNavigation, ChapterOption, ChapterResponse, MangaChapter, Scanlator,
+    ChapterNavigation, ChapterResponse, MangaChapter, Scanlator,
 };
 use crate::models::manga_type::WorkFormat;
 use crate::models::work::{
@@ -147,6 +147,17 @@ struct ChapterRow {
     scanlation_group_id: Option<i32>,
     scanlation_group_name: Option<String>,
     released_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ChapterListRow {
+    id: Uuid,
+    number: f64,
+    title: Option<String>,
+    scanlation_group_id: Option<i32>,
+    pages: Option<i16>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -1081,29 +1092,28 @@ pub async fn chapter_detail(
     .flatten();
 
     // Chapter options list
-    #[derive(Debug, sqlx::FromRow)]
-    struct ListItemRow {
-        number: f64,
-        title: Option<String>,
-        scanlation_group_id: Option<i32>,
-    }
-
-    let list_rows: Vec<ListItemRow> = sqlx::query_as::<_, ListItemRow>(
-        "SELECT number::double precision AS number, title, scanlation_group_id FROM public.chapters WHERE work_id = $1 ORDER BY number DESC",
+    // Chapter list for all chapters
+    let list_rows: Vec<ChapterListRow> = sqlx::query_as::<_, ChapterListRow>(
+        "SELECT id, number::double precision AS number, title, scanlation_group_id, pages, created_at, updated_at \
+         FROM public.chapters WHERE work_id = $1 ORDER BY number DESC",
     )
     .bind(id)
     .fetch_all(&db)
     .await?;
 
-    let chapter_options: Vec<ChapterOption> = list_rows
+    let chapters: Vec<MangaChapter> = list_rows
         .into_iter()
-        .map(|r| ChapterOption {
-            label: r
-                .title
-                .clone()
-                .unwrap_or_else(|| format!("Ch. {}", r.number)),
-            value: r.number.to_string(),
-            scanlator_id: r.scanlation_group_id.unwrap_or(0),
+        .map(|r| {
+            let sg_id = r.scanlation_group_id;
+            MangaChapter {
+                id: r.id,
+                title: r.title.clone().unwrap_or_else(|| format!("Chapter {}", r.number)),
+                number: r.number,
+                scanlator_id: sg_id.unwrap_or(0),
+                pages: r.pages.map(|p| p as i32),
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            }
         })
         .collect();
 
@@ -1136,7 +1146,11 @@ pub async fn chapter_detail(
                 .unwrap_or_else(|| format!("Chapter {}", chapter_row.number)),
             images: chapter_row.images,
             number: chapter_row.number,
-            chapters: chapter_options,
+            chapters,
+            scanlator: sg_id.map(|sid| Scanlator {
+                id: sid,
+                name: chapter_row.scanlation_group_name.clone().unwrap_or_default(),
+            }),
             work_id: id,
             work_title,
             last_chapter: prev_num.map(|n| ChapterNavigation {
