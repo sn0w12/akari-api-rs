@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 
+use akari_api_rs::analytics::AnalyticsLayer;
 use akari_api_rs::auth::AppState;
 use akari_api_rs::config::Config;
 use akari_api_rs::db::init_pool;
@@ -137,6 +138,7 @@ async fn main() {
             "/v2/notifications/send",
             post(notifications::send_notification),
         )
+        .route_layer(AnalyticsLayer::new(pool.clone()))
         .merge(SwaggerUi::new("/v2/openapi").url("/v2/openapi.json", ApiDoc::openapi()))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
