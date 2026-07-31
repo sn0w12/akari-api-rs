@@ -1,4 +1,5 @@
 use super::chapter::MangaChapter;
+use super::cover::Cover;
 use super::manga_type::WorkFormat;
 use super::work::TrackerItem;
 use chrono::{DateTime, Utc};
@@ -49,7 +50,7 @@ pub struct BookmarkResponse {
     #[serde(rename = "mangaId")]
     pub work_id: Uuid,
     pub title: String,
-    pub cover: String,
+    pub cover: Cover,
     pub description: String,
     pub status: String,
     #[serde(rename = "type")]

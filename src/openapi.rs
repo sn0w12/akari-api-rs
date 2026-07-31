@@ -3,6 +3,7 @@ use utoipa::OpenApi;
 use crate::models::bookmark::*;
 use crate::models::chapter::*;
 use crate::models::comment::*;
+use crate::models::cover::Cover;
 use crate::models::list::*;
 use crate::models::manga_type::WorkFormat;
 use crate::models::user::{UserProfileDetailsResponse, UserResponse, UserRole};
@@ -125,6 +126,7 @@ use crate::models::work::*;
             UserListDetailResponse,
             ListEntryResponse,
             WorkFormat,
+            Cover,
         )
     ),
     tags(

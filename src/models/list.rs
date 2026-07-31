@@ -1,3 +1,4 @@
+use super::cover::Cover;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -34,7 +35,7 @@ pub struct ListEntryResponse {
     #[serde(rename = "mangaTitle")]
     pub manga_title: String,
     #[serde(rename = "mangaCover")]
-    pub manga_cover: String,
+    pub manga_cover: Cover,
     #[serde(rename = "mangaDescription")]
     pub manga_description: String,
 }

@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::auth::{AuthUser, OptionalAuthUser};
 use crate::db::DbPool;
 use crate::error::{ApiError, ErrorResponseTemplate};
+use crate::models::cover::Cover;
 use crate::models::list::{
     CreateListBody, ListEntryResponse, UpdateEntryBody, UserListDetailResponse, UserListResponse,
 };
@@ -176,10 +177,10 @@ pub async fn get_list(
 
     let entries: Vec<ListEntryResponse> = sqlx::query_as::<_, ListEntryRow>(
         "SELECT ule.list_id, ule.work_id, ule.order_index, ule.created_at, ule.updated_at, \
-         w.title AS manga_title, cov.url AS manga_cover, w.description AS manga_description \
+         w.title AS manga_title, cov.url AS manga_cover_url, cov.thumbhash AS manga_cover_thumbhash, w.description AS manga_description \
          FROM public.user_list_entries ule \
          JOIN public.works w ON w.id = ule.work_id \
-         LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+         LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
          WHERE ule.list_id = $1 \
          ORDER BY ule.order_index ASC",
     )
@@ -188,7 +189,10 @@ pub async fn get_list(
         id: r.list_id, list_id: r.list_id, work_id: r.work_id,
         order_index: r.order_index,
         created_at: r.created_at, updated_at: r.updated_at,
-        manga_title: r.manga_title, manga_cover: r.manga_cover.unwrap_or_default(), manga_description: r.manga_description,
+        manga_title: r.manga_title, manga_cover: Cover {
+            url: r.manga_cover_url.unwrap_or_default(),
+            thumbhash: r.manga_cover_thumbhash,
+        }, manga_description: r.manga_description,
     }).collect();
 
     let uid = list.user_id.clone();
@@ -233,7 +237,8 @@ struct ListEntryRow {
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     manga_title: String,
-    manga_cover: Option<String>,
+    manga_cover_url: Option<String>,
+    manga_cover_thumbhash: Option<String>,
     manga_description: String,
 }
 

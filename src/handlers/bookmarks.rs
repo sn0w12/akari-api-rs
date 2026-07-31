@@ -13,6 +13,7 @@ use crate::models::bookmark::{
     HistoryBucket, HourReadCount, PaginatedBookmarkResponse, ReadingHistoryResponse,
     ReadingStatsResponse,
 };
+use crate::models::cover::Cover;
 use crate::response::SuccessResponse;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -63,7 +64,8 @@ struct BookmarkRow {
     view_count: i64,
     score: Option<f64>,
     trackers: String,
-    cover: Option<String>,
+    cover_url: Option<String>,
+    cover_thumbhash: Option<String>,
     work_created_at: DateTime<Utc>,
     work_updated_at: DateTime<Utc>,
     // Last read chapter
@@ -174,7 +176,7 @@ pub async fn list_bookmarks(
     let sql = "SELECT ule.work_id, w.title, w.description, w.status, w.format, w.genres, \
          w.view_count, w.score::double precision AS score, \
          w.created_at AS work_created_at, w.updated_at AS work_updated_at, \
-         cov.url AS cover, \
+         cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, \
          auth.authors, alt.alternative_titles, \
          tr.trackers, \
          c.id AS lr_id, c.title AS lr_title, c.number::double precision AS lr_number, \
@@ -192,7 +194,7 @@ pub async fn list_bookmarks(
          ule.created_at, ule.updated_at \
          FROM public.user_library_entries ule \
          JOIN public.works w ON w.id = ule.work_id \
-         LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+         LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
            FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
@@ -224,7 +226,10 @@ pub async fn list_bookmarks(
             BookmarkResponse {
                 work_id: r.work_id,
                 title: r.title,
-                cover: r.cover.unwrap_or_default(),
+                cover: Cover {
+                    url: r.cover_url.unwrap_or_default(),
+                    thumbhash: r.cover_thumbhash,
+                },
                 description: r.description,
                 status: r.status,
                 manga_type: WorkFormat::from(&r.manga_type as &str),
@@ -288,7 +293,7 @@ pub async fn search_bookmarks(
     let sql = "SELECT ule.work_id, w.title, w.description, w.status, w.format, w.genres, \
          w.view_count, w.score::double precision AS score, \
          w.created_at AS work_created_at, w.updated_at AS work_updated_at, \
-         cov.url AS cover, \
+         cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, \
          auth.authors, alt.alternative_titles, \
          tr.trackers, \
          c.id AS lr_id, c.title AS lr_title, c.number::double precision AS lr_number, \
@@ -306,7 +311,7 @@ pub async fn search_bookmarks(
          ule.created_at, ule.updated_at \
          FROM public.user_library_entries ule \
          JOIN public.works w ON w.id = ule.work_id \
-         LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+         LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
            FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
@@ -339,7 +344,10 @@ pub async fn search_bookmarks(
             BookmarkResponse {
                 work_id: r.work_id,
                 title: r.title,
-                cover: r.cover.unwrap_or_default(),
+                cover: Cover {
+                    url: r.cover_url.unwrap_or_default(),
+                    thumbhash: r.cover_thumbhash,
+                },
                 description: r.description,
                 status: r.status,
                 manga_type: WorkFormat::from(&r.manga_type as &str),

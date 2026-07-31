@@ -11,6 +11,7 @@ use crate::error::{ApiError, ErrorResponseTemplate};
 use crate::models::chapter::{
     ChapterNavigation, ChapterResponse, MangaChapter, Scanlator,
 };
+use crate::models::cover::Cover;
 use crate::models::manga_type::WorkFormat;
 use crate::models::work::{
     ChapterIdsResponse, MangaChapterResponse, MangaDetailResponse, MangaIdsResponse, MangaResponse,
@@ -90,7 +91,8 @@ struct MangaListRow {
     preferred_scanlation_group_id: Option<i32>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
-    cover: Option<String>,
+    cover_url: Option<String>,
+    cover_thumbhash: Option<String>,
     authors: Vec<String>,
     rating_count: Option<i64>,
     average_rating: Option<f64>,
@@ -102,7 +104,10 @@ impl From<MangaListRow> for MangaResponse {
         Self {
             id: r.id,
             title: r.title,
-            cover: r.cover.unwrap_or_default(),
+            cover: Cover {
+                url: r.cover_url.unwrap_or_default(),
+                thumbhash: r.cover_thumbhash,
+            },
             description: r.description,
             status: r.status,
             manga_type: WorkFormat::from(&r.manga_type as &str),
@@ -185,11 +190,11 @@ macro_rules! manga_full_sql {
             "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
              w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
              w.created_at, w.updated_at, \
-             cov.url AS cover, auth.authors, alt.alternative_titles, \
+             cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
              tr.trackers, r.rating_count, r.average_rating, \
              0::bigint AS total_count \
              FROM public.works w \
-             LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+             LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
              LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
                FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
              LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
@@ -209,7 +214,7 @@ const MANGA_BATCH_SQL: &str = manga_full_sql!("WHERE w.id = ANY($1)");
 /// Static SQL for the list/popular QueryBuilder data queries (COUNT(*) OVER() variant).
 const MANGA_LIST_FROM: &str = "\
 FROM public.works w \
-LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
 LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
   FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
 LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
@@ -313,12 +318,12 @@ pub async fn list_manga(
 
     // Data
     let mut data_builder = QueryBuilder::new(
-        "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
-         w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
-         w.created_at, w.updated_at, \
-         cov.url AS cover, auth.authors, alt.alternative_titles, \
-         tr.trackers, r.rating_count, r.average_rating, \
-         COUNT(*) OVER() AS total_count ",
+         "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
+          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
+          w.created_at, w.updated_at, \
+          cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
+          tr.trackers, r.rating_count, r.average_rating, \
+          COUNT(*) OVER() AS total_count ",
     );
     data_builder.push(MANGA_LIST_FROM);
     data_builder.push(" WHERE 1=1");
@@ -395,7 +400,7 @@ pub async fn popular_manga(
         "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
-         cov.url AS cover, auth.authors, alt.alternative_titles, \
+         cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
          tr.trackers, r.rating_count, r.average_rating, \
          COUNT(*) OVER() AS total_count ",
     );
@@ -556,11 +561,11 @@ async fn batch_by_tracker(
         "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
-         cov.url AS cover, auth.authors, alt.alternative_titles, \
+         cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
          tr.trackers, r.rating_count, r.average_rating, \
          0::bigint AS total_count \
           FROM public.works w \
-          LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+          LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
           LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
             FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
           LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
@@ -640,11 +645,11 @@ pub async fn manga_recommendations(
     let sql = "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
-         cov.url AS cover, auth.authors, alt.alternative_titles, \
+         cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
          tr.trackers, r.rating_count, r.average_rating, \
          0::bigint AS total_count \
          FROM public.works w \
-         LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+         LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
            FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
           LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
@@ -685,11 +690,11 @@ pub async fn search_manga(
 
     let items: Vec<MangaSearchResponse> = if let Some(ref q) = query {
         const SQL: &str = "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, w.view_count, w.score::double precision AS score, \
-             w.created_at, w.updated_at, cov.url AS cover, auth.authors, \
+             w.created_at, w.updated_at, cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, \
              alt.alternative_titles, tr.trackers, \
              ts_rank(w.search_vector, plainto_tsquery('english', $1))::double precision AS rank \
              FROM public.works w \
-             LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+             LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
              LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
                FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
              LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
@@ -713,7 +718,8 @@ pub async fn search_manga(
             score: Option<f64>,
             created_at: DateTime<Utc>,
             updated_at: DateTime<Utc>,
-            cover: Option<String>,
+            cover_url: Option<String>,
+            cover_thumbhash: Option<String>,
             authors: Vec<String>,
             alternative_titles: String,
             trackers: String,
@@ -730,7 +736,10 @@ pub async fn search_manga(
             .map(|r| MangaSearchResponse {
                 id: r.id,
                 title: r.title,
-                cover: r.cover.unwrap_or_default(),
+                cover: Cover {
+                    url: r.cover_url.unwrap_or_default(),
+                    thumbhash: r.cover_thumbhash,
+                },
                 description: r.description,
                 status: r.status,
                 manga_type: WorkFormat::from(&r.manga_type as &str),
@@ -1266,11 +1275,11 @@ pub async fn recently_viewed(
         "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
-         cov.url AS cover, auth.authors, alt.alternative_titles, \
+         cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
          tr.trackers, r.rating_count, r.average_rating, \
          0::bigint AS total_count \
          FROM public.works w \
-         LEFT JOIN LATERAL (SELECT url FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+         LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
            FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
           LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \

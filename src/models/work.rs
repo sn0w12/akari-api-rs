@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use super::cover::Cover;
 use super::manga_type::WorkFormat;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
@@ -67,7 +68,7 @@ pub struct RatingResponse {
 pub struct MangaResponse {
     pub id: Uuid,
     pub title: String,
-    pub cover: String,
+    pub cover: Cover,
     pub description: String,
     pub status: String,
     #[serde(rename = "type")]
@@ -90,7 +91,7 @@ pub struct MangaResponse {
 pub struct MangaDetailResponse {
     pub id: Uuid,
     pub title: String,
-    pub cover: String,
+    pub cover: Cover,
     pub description: String,
     pub status: String,
     #[serde(rename = "type")]
@@ -121,7 +122,7 @@ pub struct MangaChapterResponse {
 pub struct MangaSearchResponse {
     pub id: Uuid,
     pub title: String,
-    pub cover: String,
+    pub cover: Cover,
     pub description: String,
     pub status: String,
     #[serde(rename = "type")]
