@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use chrono::{DateTime, Utc};
@@ -678,34 +680,22 @@ pub async fn manga_recommendations(
 }
 
 #[derive(Debug, sqlx::FromRow)]
-struct RelationshipRow {
+struct RelationshipEdge {
     related_work_id: Uuid,
     relationship_type: String,
-    title: String,
-    cover_url: Option<String>,
-    cover_thumbhash: Option<String>,
 }
 
 const WORK_RELATIONSHIPS_SQL: &str = "\
-SELECT w.id AS related_work_id, wr.relationship_type AS relationship_type, \
-       w.title AS title, cov.url AS cover_url, cov.thumbhash AS cover_thumbhash \
-FROM public.work_relationships wr \
-JOIN public.works w ON w.id = wr.related_work_id \
-LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = wr.related_work_id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
-WHERE wr.work_id = $1 \
+SELECT related_work_id, relationship_type FROM public.work_relationships WHERE work_id = $1 \
 UNION \
-SELECT w.id AS related_work_id, \
-       CASE wr.relationship_type \
+SELECT work_id AS related_work_id, \
+       CASE relationship_type \
          WHEN 'prequel' THEN 'sequel' \
          WHEN 'sequel' THEN 'prequel' \
-         ELSE wr.relationship_type \
-       END AS relationship_type, \
-       w.title AS title, cov.url AS cover_url, cov.thumbhash AS cover_thumbhash \
-FROM public.work_relationships wr \
-JOIN public.works w ON w.id = wr.work_id \
-LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = wr.work_id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
-WHERE wr.related_work_id = $1 \
-ORDER BY relationship_type, title";
+         ELSE relationship_type \
+       END AS relationship_type \
+FROM public.work_relationships WHERE related_work_id = $1 \
+ORDER BY relationship_type";
 
 /// GET /v2/manga/{id}/relationships
 #[utoipa::path(get, path = "/v2/manga/{id}/relationships", tag = "manga", responses(
@@ -726,21 +716,39 @@ pub async fn get_work_relationships(
         return Err(ApiError::not_found("Manga not found"));
     }
 
-    let rows: Vec<RelationshipRow> = sqlx::query_as::<_, RelationshipRow>(WORK_RELATIONSHIPS_SQL)
+    let edges: Vec<RelationshipEdge> = sqlx::query_as::<_, RelationshipEdge>(WORK_RELATIONSHIPS_SQL)
         .bind(id)
         .fetch_all(&db)
         .await?;
 
-    let items: Vec<WorkRelationship> = rows
+    if edges.is_empty() {
+        return Ok(Json(SuccessResponse {
+            result: "Success".to_string(),
+            status: 200,
+            data: vec![],
+        }));
+    }
+
+    let related_ids: Vec<Uuid> = edges.iter().map(|e| e.related_work_id).collect();
+
+    let rows: Vec<MangaListRow> = sqlx::query_as::<_, MangaListRow>(MANGA_BATCH_SQL)
+        .bind(&related_ids)
+        .fetch_all(&db)
+        .await?;
+
+    let mut rows_by_id: HashMap<Uuid, MangaListRow> =
+        rows.into_iter().map(|r| (r.id, r)).collect();
+
+    let items: Vec<WorkRelationship> = edges
         .into_iter()
-        .map(|r| WorkRelationship {
-            relationship_type: r.relationship_type.into(),
-            related_work_id: r.related_work_id,
-            title: r.title,
-            cover: Cover {
-                url: r.cover_url.unwrap_or_default(),
-                thumbhash: r.cover_thumbhash,
-            },
+        .filter_map(|e| {
+            rows_by_id.remove(&e.related_work_id).map(|row| {
+                let manga: MangaResponse = row.into();
+                WorkRelationship {
+                    relationship_type: e.relationship_type.into(),
+                    manga,
+                }
+            })
         })
         .collect();
 

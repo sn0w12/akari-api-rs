@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use uuid::Uuid;
 
-use super::cover::Cover;
+use super::work::MangaResponse;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub enum RelationshipType {
@@ -51,8 +50,5 @@ impl From<String> for RelationshipType {
 pub struct WorkRelationship {
     #[serde(rename = "relationshipType")]
     pub relationship_type: RelationshipType,
-    #[serde(rename = "relatedWorkId")]
-    pub related_work_id: Uuid,
-    pub title: String,
-    pub cover: Cover,
+    pub manga: MangaResponse,
 }
