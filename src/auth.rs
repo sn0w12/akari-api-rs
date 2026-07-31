@@ -18,6 +18,9 @@ pub struct AuthUser {
     pub banned: Option<bool>,
 }
 
+/// Authenticated user that is guaranteed to be an admin or owner.
+pub struct AdminAuthUser(pub AuthUser);
+
 pub struct OptionalAuthUser(pub Option<AuthUser>);
 
 const SESSION_COOKIE_NAME: &str = "better-auth.session_token";
@@ -77,6 +80,30 @@ where
             }
 
             Ok(user)
+        }
+    }
+}
+
+impl<S> FromRequestParts<S> for AdminAuthUser
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = ApiError;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        async move {
+            let user = AuthUser::from_request_parts(parts, state).await?;
+            let role = user.role.as_deref().unwrap_or("user");
+            if role != "admin" && role != "owner" {
+                return Err(ApiError::Forbidden {
+                    message: "Admin access required".into(),
+                });
+            }
+            Ok(AdminAuthUser(user))
         }
     }
 }

@@ -82,6 +82,11 @@ where
         let path = req.uri().path().to_string();
         let method = req.method().to_string();
 
+        // Don't record analytics requests for the analytics endpoints themselves
+        if path.starts_with("/v2/analytics") {
+            return Box::pin(self.inner.call(req));
+        }
+
         let hostname = req
             .headers()
             .get("host")

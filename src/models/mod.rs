@@ -1,4 +1,5 @@
 pub mod anilist;
+pub mod analytics;
 pub mod bookmark;
 pub mod chapter;
 pub mod cover;
@@ -6,5 +7,6 @@ pub mod comment;
 pub mod list;
 pub mod mal;
 pub mod manga_type;
+pub mod relationship;
 pub mod user;
 pub mod work;

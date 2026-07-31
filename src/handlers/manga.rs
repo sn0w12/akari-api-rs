@@ -13,6 +13,7 @@ use crate::models::chapter::{
 };
 use crate::models::cover::Cover;
 use crate::models::manga_type::WorkFormat;
+use crate::models::relationship::WorkRelationship;
 use crate::models::work::{
     ChapterIdsResponse, MangaChapterResponse, MangaDetailResponse, MangaIdsResponse, MangaResponse,
     MangaSearchResponse, RatingResponse,
@@ -668,6 +669,80 @@ pub async fn manga_recommendations(
         .await?;
 
     let items: Vec<MangaResponse> = rows.into_iter().map(Into::into).collect();
+
+    Ok(Json(SuccessResponse {
+        result: "Success".to_string(),
+        status: 200,
+        data: items,
+    }))
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RelationshipRow {
+    related_work_id: Uuid,
+    relationship_type: String,
+    title: String,
+    cover_url: Option<String>,
+    cover_thumbhash: Option<String>,
+}
+
+const WORK_RELATIONSHIPS_SQL: &str = "\
+SELECT w.id AS related_work_id, wr.relationship_type AS relationship_type, \
+       w.title AS title, cov.url AS cover_url, cov.thumbhash AS cover_thumbhash \
+FROM public.work_relationships wr \
+JOIN public.works w ON w.id = wr.related_work_id \
+LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = wr.related_work_id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+WHERE wr.work_id = $1 \
+UNION \
+SELECT w.id AS related_work_id, \
+       CASE wr.relationship_type \
+         WHEN 'prequel' THEN 'sequel' \
+         WHEN 'sequel' THEN 'prequel' \
+         ELSE wr.relationship_type \
+       END AS relationship_type, \
+       w.title AS title, cov.url AS cover_url, cov.thumbhash AS cover_thumbhash \
+FROM public.work_relationships wr \
+JOIN public.works w ON w.id = wr.work_id \
+LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = wr.work_id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+WHERE wr.related_work_id = $1 \
+ORDER BY relationship_type, title";
+
+/// GET /v2/manga/{id}/relationships
+#[utoipa::path(get, path = "/v2/manga/{id}/relationships", tag = "manga", responses(
+    (status = 200, description = "Success", body = SuccessResponse<Vec<WorkRelationship>>),
+    (status = 404, description = "Not found", body = ErrorResponseTemplate),
+    (status = 500, description = "Internal error", body = ErrorResponseTemplate),
+))]
+pub async fn get_work_relationships(
+    Path(id): Path<Uuid>,
+    State(db): State<DbPool>,
+) -> Result<Json<SuccessResponse<Vec<WorkRelationship>>>, ApiError> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM public.works WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&db)
+            .await?;
+    if !exists {
+        return Err(ApiError::not_found("Manga not found"));
+    }
+
+    let rows: Vec<RelationshipRow> = sqlx::query_as::<_, RelationshipRow>(WORK_RELATIONSHIPS_SQL)
+        .bind(id)
+        .fetch_all(&db)
+        .await?;
+
+    let items: Vec<WorkRelationship> = rows
+        .into_iter()
+        .map(|r| WorkRelationship {
+            relationship_type: r.relationship_type.into(),
+            related_work_id: r.related_work_id,
+            title: r.title,
+            cover: Cover {
+                url: r.cover_url.unwrap_or_default(),
+                thumbhash: r.cover_thumbhash,
+            },
+        })
+        .collect();
 
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),

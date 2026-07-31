@@ -1,11 +1,14 @@
 use utoipa::OpenApi;
 
+use crate::models::analytics::*;
 use crate::models::bookmark::*;
+use crate::handlers::analytics::AnalyticsInterval;
 use crate::models::chapter::*;
 use crate::models::comment::*;
 use crate::models::cover::Cover;
 use crate::models::list::*;
 use crate::models::manga_type::WorkFormat;
+use crate::models::relationship::{RelationshipType, WorkRelationship};
 use crate::models::user::{UserProfileDetailsResponse, UserResponse, UserRole};
 use crate::models::work::*;
 
@@ -25,6 +28,7 @@ use crate::models::work::*;
         crate::handlers::manga::manga_chapters,
         crate::handlers::manga::global_chapter_ids,
         crate::handlers::manga::manga_recommendations,
+        crate::handlers::manga::get_work_relationships,
         crate::handlers::manga::chapter_ids,
         crate::handlers::manga::chapter_detail,
         crate::handlers::manga::record_view,
@@ -91,6 +95,12 @@ use crate::models::work::*;
         crate::handlers::notifications::subscribe,
         crate::handlers::notifications::website_notifications,
         crate::handlers::notifications::send_notification,
+        // Analytics
+        crate::handlers::analytics::overview,
+        crate::handlers::analytics::timeseries,
+        crate::handlers::analytics::top,
+        crate::handlers::analytics::slowest,
+        crate::handlers::analytics::requests,
     ),
     components(
         schemas(
@@ -127,6 +137,14 @@ use crate::models::work::*;
             ListEntryResponse,
             WorkFormat,
             Cover,
+            WorkRelationship,
+            RelationshipType,
+            AnalyticsOverviewResponse,
+            AnalyticsTimeseriesPoint,
+            AnalyticsInterval,
+            AnalyticsTopItem,
+            AnalyticsSlowestRoute,
+            AnalyticsRequestRow,
         )
     ),
     tags(
@@ -140,6 +158,7 @@ use crate::models::work::*;
         (name = "mal", description = "MyAnimeList proxy"),
         (name = "anilist", description = "AniList proxy"),
         (name = "notifications", description = "Push notifications"),
+        (name = "analytics", description = "Request analytics"),
     )
 )]
 pub struct ApiDoc;

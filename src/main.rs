@@ -5,7 +5,7 @@ use akari_api_rs::auth::AppState;
 use akari_api_rs::config::Config;
 use akari_api_rs::db::init_pool;
 use akari_api_rs::handlers::{
-    anilist, author, bookmarks, comments, genre, lists, mal, manga, notifications, user,
+    anilist, analytics, author, bookmarks, comments, genre, lists, mal, manga, notifications, user,
 };
 use akari_api_rs::middleware::mal_token_refresh::MalTokenRefreshLayer;
 use akari_api_rs::middleware::rate_limit::RateLimitLayer;
@@ -56,6 +56,10 @@ async fn main() {
         .route(
             "/v2/manga/{id}/recommendations",
             get(manga::manga_recommendations),
+        )
+        .route(
+            "/v2/manga/{id}/relationships",
+            get(manga::get_work_relationships),
         )
         .route("/v2/manga/{id}/chapter-ids", get(manga::chapter_ids))
         .route("/v2/manga/{id}/{subId}", get(manga::chapter_detail))
@@ -138,6 +142,11 @@ async fn main() {
             "/v2/notifications/send",
             post(notifications::send_notification),
         )
+        .route("/v2/analytics/overview", get(analytics::overview))
+        .route("/v2/analytics/timeseries", get(analytics::timeseries))
+        .route("/v2/analytics/top", get(analytics::top))
+        .route("/v2/analytics/slowest", get(analytics::slowest))
+        .route("/v2/analytics/requests", get(analytics::requests))
         .route_layer(AnalyticsLayer::new(pool.clone()))
         .merge(SwaggerUi::new("/v2/openapi").url("/v2/openapi.json", ApiDoc::openapi()))
         .layer(CompressionLayer::new())
