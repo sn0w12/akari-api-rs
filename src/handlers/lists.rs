@@ -50,14 +50,11 @@ pub async fn list_user_lists(
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<PaginatedResponse<UserListResponse>>>, ApiError> {
     let (page, page_size, offset) = pagination(params.page, params.page_size);
-    let total_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM public.user_lists WHERE user_id = $1 AND is_public = TRUE",
-    )
-    .bind(&user_id)
-    .fetch_one(&db)
-    .await?;
-    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
-    let rows: Vec<ListRow> = sqlx::query_as::<_, ListRow>(
+
+    let count_fut = sqlx::query_scalar("SELECT COUNT(*) FROM public.user_lists WHERE user_id = $1 AND is_public = TRUE")
+        .bind(&user_id)
+        .fetch_one(&db);
+    let data_fut = sqlx::query_as::<_, ListRow>(
         "SELECT ul.id, ul.user_id, ul.title, ul.description, ul.is_public, ul.created_at, ul.updated_at, \
          (SELECT COUNT(*) FROM public.user_list_entries ule WHERE ule.list_id = ul.id)::bigint AS total_entries \
          FROM public.user_lists ul \
@@ -65,7 +62,9 @@ pub async fn list_user_lists(
          ORDER BY ul.updated_at DESC LIMIT $2 OFFSET $3",
     )
     .bind(&user_id).bind(page_size as i64).bind(offset)
-    .fetch_all(&db).await?;
+    .fetch_all(&db);
+    let (total_count, rows) = tokio::try_join!(count_fut, data_fut)?;
+    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
     let items: Vec<UserListResponse> = rows
         .into_iter()
         .map(|r| UserListResponse {

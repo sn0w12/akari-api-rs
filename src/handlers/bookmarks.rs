@@ -165,14 +165,6 @@ pub async fn list_bookmarks(
 ) -> Result<Json<SuccessResponse<PaginatedBookmarkResponse>>, ApiError> {
     let (page, page_size, offset) = pagination(params.page, params.page_size);
 
-    let total_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM public.user_library_entries WHERE user_id = $1")
-            .bind(&user.id)
-            .fetch_one(&db)
-            .await?;
-
-    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
-
     let sql = "SELECT ule.work_id, w.title, w.description, w.status, w.format, w.genres, \
          w.view_count, w.score::double precision AS score, \
          w.created_at AS work_created_at, w.updated_at AS work_updated_at, \
@@ -210,12 +202,18 @@ pub async fn list_bookmarks(
          ORDER BY ule.updated_at DESC \
          LIMIT $2 OFFSET $3";
 
-    let rows: Vec<BookmarkRow> = sqlx::query_as::<_, BookmarkRow>(sql)
+    let count_fut =
+        sqlx::query_scalar("SELECT COUNT(*) FROM public.user_library_entries WHERE user_id = $1")
+            .bind(&user.id)
+            .fetch_one(&db);
+    let data_fut = sqlx::query_as::<_, BookmarkRow>(sql)
         .bind(&user.id)
         .bind(page_size as i64)
         .bind(offset)
-        .fetch_all(&db)
-        .await?;
+        .fetch_all(&db);
+    let (total_count, rows) = tokio::try_join!(count_fut, data_fut)?;
+
+    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
 
     let items: Vec<BookmarkResponse> = rows
         .into_iter()
@@ -278,18 +276,6 @@ pub async fn search_bookmarks(
 ) -> Result<Json<SuccessResponse<PaginatedBookmarkResponse>>, ApiError> {
     let (page, page_size, offset) = pagination(params.page, params.page_size);
 
-    let total_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM public.user_library_entries ule \
-         JOIN public.works w ON w.id = ule.work_id \
-         WHERE ule.user_id = $1 AND w.search_vector @@ plainto_tsquery('english', $2)",
-    )
-    .bind(&user.id)
-    .bind(&params.query)
-    .fetch_one(&db)
-    .await?;
-
-    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
-
     let sql = "SELECT ule.work_id, w.title, w.description, w.status, w.format, w.genres, \
          w.view_count, w.score::double precision AS score, \
          w.created_at AS work_created_at, w.updated_at AS work_updated_at, \
@@ -327,13 +313,23 @@ pub async fn search_bookmarks(
          ORDER BY ule.updated_at DESC \
          LIMIT $3 OFFSET $4";
 
-    let rows: Vec<BookmarkRow> = sqlx::query_as::<_, BookmarkRow>(sql)
+    let count_fut = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM public.user_library_entries ule \
+         JOIN public.works w ON w.id = ule.work_id \
+         WHERE ule.user_id = $1 AND w.search_vector @@ plainto_tsquery('english', $2)",
+    )
+    .bind(&user.id)
+    .bind(&params.query)
+    .fetch_one(&db);
+    let data_fut = sqlx::query_as::<_, BookmarkRow>(sql)
         .bind(&user.id)
         .bind(&params.query)
         .bind(page_size as i64)
         .bind(offset)
-        .fetch_all(&db)
-        .await?;
+        .fetch_all(&db);
+    let (total_count, rows) = tokio::try_join!(count_fut, data_fut)?;
+
+    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
 
     let items: Vec<BookmarkResponse> = rows
         .into_iter()

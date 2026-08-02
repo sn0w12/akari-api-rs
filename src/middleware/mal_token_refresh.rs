@@ -6,7 +6,6 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::response::Response;
 use serde_json::Value;
-use sqlx::PgPool;
 use tower::{Layer, Service};
 
 use crate::config::Config;
@@ -39,9 +38,18 @@ fn jwt_expires_within(token: &str, minutes: i64) -> bool {
 
 #[derive(Clone)]
 pub struct MalTokenRefreshLayer {
-    #[allow(dead_code)]
-    pub pool: PgPool,
-    pub config: Config,
+    client: reqwest::Client,
+    config: Config,
+}
+
+impl MalTokenRefreshLayer {
+    /// Builds the layer with a single shared HTTP client.
+    pub fn new(config: Config) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            config,
+        }
+    }
 }
 
 impl<S> Layer<S> for MalTokenRefreshLayer {
@@ -50,6 +58,7 @@ impl<S> Layer<S> for MalTokenRefreshLayer {
     fn layer(&self, inner: S) -> Self::Service {
         MalTokenRefreshMiddleware {
             inner,
+            client: self.client.clone(),
             config: self.config.clone(),
         }
     }
@@ -58,6 +67,7 @@ impl<S> Layer<S> for MalTokenRefreshLayer {
 #[derive(Clone)]
 pub struct MalTokenRefreshMiddleware<S> {
     inner: S,
+    client: reqwest::Client,
     config: Config,
 }
 
@@ -105,11 +115,11 @@ where
         }
 
         let config = self.config.clone();
+        let client = self.client.clone();
         let mut inner = self.inner.clone();
         let refresh_token = refresh_token.unwrap();
 
         Box::pin(async move {
-            let client = reqwest::Client::new();
             let params = [
                 ("client_id", config.mal_client_id.as_str()),
                 ("grant_type", "refresh_token"),

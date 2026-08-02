@@ -51,13 +51,8 @@ pub async fn list_authors(
     let page_size = params.page_size.unwrap_or(100).clamp(1, 500);
     let offset = ((page - 1) as i64) * (page_size as i64);
 
-    let total_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM public.authors")
-        .fetch_one(&db)
-        .await?;
-
-    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
-
-    let items: Vec<AuthorResponse> = sqlx::query_as::<_, (String, i64)>(
+    let count_fut = sqlx::query_scalar("SELECT COUNT(*) FROM public.authors").fetch_one(&db);
+    let data_fut = sqlx::query_as::<_, (String, i64)>(
         "SELECT a.name, COUNT(wa.work_id)::bigint AS manga_count \
          FROM public.authors a \
          JOIN public.work_authors wa ON wa.author_id = a.id \
@@ -67,14 +62,18 @@ pub async fn list_authors(
     )
     .bind(page_size as i64)
     .bind(offset)
-    .fetch_all(&db)
-    .await?
-    .into_iter()
-    .map(|(name, count)| AuthorResponse {
-        name,
-        manga_count: count,
-    })
-    .collect();
+    .fetch_all(&db);
+    let (total_count, raw_items) = tokio::try_join!(count_fut, data_fut)?;
+
+    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
+
+    let items: Vec<AuthorResponse> = raw_items
+        .into_iter()
+        .map(|(name, count)| AuthorResponse {
+            name,
+            manga_count: count,
+        })
+        .collect();
 
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),

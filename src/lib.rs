@@ -1,4 +1,5 @@
 pub mod analytics;
+pub mod app;
 pub mod auth;
 pub mod banned_words;
 pub mod config;

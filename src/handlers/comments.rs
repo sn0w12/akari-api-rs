@@ -37,16 +37,6 @@ pub async fn list_comments(
     let page_size = params.page_size.unwrap_or(20).clamp(1, 50);
     let offset = ((page - 1) as i64) * (page_size as i64);
 
-    let total_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM public.comments WHERE target_type = $1 AND target_id = $2 AND parent_id IS NULL AND deleted = FALSE",
-    )
-    .bind(&target_type)
-    .bind(target_id)
-    .fetch_one(&db)
-    .await?;
-
-    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
-
     let sort_clause = match params.sort.as_ref() {
         Some(CommentSortOrder::Latest) => "c.created_at DESC",
         Some(CommentSortOrder::Oldest) => "c.created_at ASC",
@@ -73,7 +63,16 @@ pub async fn list_comments(
     builder.push(" OFFSET ");
     builder.push_bind(offset);
 
-    let rows: Vec<CommentRow> = builder.build_query_as().fetch_all(&db).await?;
+    let count_fut = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM public.comments WHERE target_type = $1 AND target_id = $2 AND parent_id IS NULL AND deleted = FALSE",
+    )
+    .bind(&target_type)
+    .bind(target_id)
+    .fetch_one(&db);
+    let data_fut = builder.build_query_as().fetch_all(&db);
+    let (total_count, rows): (i64, Vec<CommentRow>) = tokio::try_join!(count_fut, data_fut)?;
+
+    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
 
     let items: Vec<CommentResponse> = rows
         .into_iter()

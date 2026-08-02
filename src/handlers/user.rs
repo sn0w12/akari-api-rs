@@ -98,12 +98,6 @@ pub async fn list_users(
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
     let offset = ((page - 1) as i64) * (page_size as i64);
 
-    let total_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM auth.user")
-        .fetch_one(&db)
-        .await?;
-
-    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
-
     #[derive(Debug, sqlx::FromRow)]
     struct ListRow {
         id: String,
@@ -117,7 +111,8 @@ pub async fn list_users(
         total_upvotes: i64,
     }
 
-    let rows: Vec<ListRow> = sqlx::query_as::<_, ListRow>(
+    let count_fut = sqlx::query_scalar("SELECT COUNT(*) FROM auth.user").fetch_one(&db);
+    let data_fut = sqlx::query_as::<_, ListRow>(
         "SELECT u.id, u.name, u.\"displayUsername\", u.role, u.banned, u.\"createdAt\" AS created_at, \
                 (SELECT COUNT(*) FROM public.comments WHERE user_id = u.id AND deleted = FALSE)::bigint AS total_comments, \
                 (SELECT COUNT(*) FROM public.comment_votes cv JOIN public.comments c ON c.id = cv.comment_id WHERE c.user_id = u.id AND cv.value > 0)::bigint AS total_upvotes \
@@ -127,8 +122,10 @@ pub async fn list_users(
     )
     .bind(page_size as i64)
     .bind(offset)
-    .fetch_all(&db)
-    .await?;
+    .fetch_all(&db);
+    let (total_count, rows) = tokio::try_join!(count_fut, data_fut)?;
+
+    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
 
     let items: Vec<UserProfileDetailsResponse> = rows
         .into_iter()

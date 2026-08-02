@@ -5,7 +5,7 @@ use serde::Deserialize;
 use sqlx::{Postgres, QueryBuilder};
 use utoipa::IntoParams;
 
-use crate::auth::{AdminAuthUser, AuthUser};
+use crate::auth::AdminAuthUser;
 use crate::db::DbPool;
 use crate::error::{ApiError, ErrorResponseTemplate};
 use crate::models::analytics::{
@@ -85,16 +85,6 @@ fn pagination(page: Option<i32>, page_size: Option<i32>) -> (i32, i32, i64) {
     (p, ps, ((p - 1) as i64) * (ps as i64))
 }
 
-fn ensure_admin(user: &AuthUser) -> Result<(), ApiError> {
-    let role = user.role.as_deref().unwrap_or("user");
-    if role != "admin" && role != "owner" {
-        return Err(ApiError::Forbidden {
-            message: "Admin access required".into(),
-        });
-    }
-    Ok(())
-}
-
 /// GET /v2/analytics/overview
 #[utoipa::path(get, path = "/v2/analytics/overview", tag = "analytics", params(AnalyticsRangeParams), responses(
     (status = 200, description = "Success", body = SuccessResponse<AnalyticsOverviewResponse>),
@@ -103,11 +93,10 @@ fn ensure_admin(user: &AuthUser) -> Result<(), ApiError> {
     (status = 500, description = "Internal error", body = ErrorResponseTemplate),
 ))]
 pub async fn overview(
-    user: AdminAuthUser,
+    _user: AdminAuthUser,
     Query(params): Query<AnalyticsRangeParams>,
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<AnalyticsOverviewResponse>>, ApiError> {
-    ensure_admin(&user.0)?;
     let (from, to) = range(&params);
 
     let row = sqlx::query_as::<_, AnalyticsOverviewRow>(
@@ -170,11 +159,10 @@ struct AnalyticsOverviewRow {
     (status = 500, description = "Internal error", body = ErrorResponseTemplate),
 ))]
 pub async fn timeseries(
-    user: AdminAuthUser,
+    _user: AdminAuthUser,
     Query(params): Query<AnalyticsTimeseriesParams>,
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<Vec<AnalyticsTimeseriesPoint>>>, ApiError> {
-    ensure_admin(&user.0)?;
     let (from, to) = range(&AnalyticsRangeParams {
         from: params.from,
         to: params.to,
@@ -220,11 +208,10 @@ pub async fn timeseries(
     (status = 500, description = "Internal error", body = ErrorResponseTemplate),
 ))]
 pub async fn top(
-    user: AdminAuthUser,
+    _user: AdminAuthUser,
     Query(params): Query<AnalyticsTopParams>,
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<Vec<AnalyticsTopItem>>>, ApiError> {
-    ensure_admin(&user.0)?;
     let (from, to) = range(&AnalyticsRangeParams {
         from: params.from,
         to: params.to,
@@ -268,11 +255,10 @@ pub async fn top(
     (status = 500, description = "Internal error", body = ErrorResponseTemplate),
 ))]
 pub async fn slowest(
-    user: AdminAuthUser,
+    _user: AdminAuthUser,
     Query(params): Query<AnalyticsTopParams>,
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<Vec<AnalyticsSlowestRoute>>>, ApiError> {
-    ensure_admin(&user.0)?;
     let (from, to) = range(&AnalyticsRangeParams {
         from: params.from,
         to: params.to,
@@ -307,11 +293,10 @@ pub async fn slowest(
     (status = 500, description = "Internal error", body = ErrorResponseTemplate),
 ))]
 pub async fn requests(
-    user: AdminAuthUser,
+    _user: AdminAuthUser,
     Query(params): Query<AnalyticsRequestsParams>,
     State(db): State<DbPool>,
 ) -> Result<Json<PaginatedResponse<AnalyticsRequestRow>>, ApiError> {
-    ensure_admin(&user.0)?;
     let (from, to) = range(&AnalyticsRangeParams {
         from: params.from,
         to: params.to,
@@ -320,7 +305,6 @@ pub async fn requests(
 
     let mut count_builder = QueryBuilder::new("SELECT COUNT(*)::bigint FROM analytics.requests");
     push_filters(&mut count_builder, from, to, &params);
-    let total: i64 = count_builder.build_query_scalar().fetch_one(&db).await?;
 
     let mut data_builder = QueryBuilder::new(
         "SELECT id, created_at, hostname, ip_address, user_agent, path, method, response_time, status, route, country_code \
@@ -332,7 +316,9 @@ pub async fn requests(
     data_builder.push(" OFFSET ");
     data_builder.push_bind(offset);
 
-    let items: Vec<AnalyticsRequestRow> = data_builder.build_query_as().fetch_all(&db).await?;
+    let count_fut = count_builder.build_query_scalar().fetch_one(&db);
+    let data_fut = data_builder.build_query_as().fetch_all(&db);
+    let (total, items) = tokio::try_join!(count_fut, data_fut)?;
     let total_pages = ((total + page_size as i64 - 1) / page_size as i64) as i32;
 
     Ok(Json(PaginatedResponse {

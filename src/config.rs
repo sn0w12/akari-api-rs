@@ -8,6 +8,7 @@ pub struct Config {
     pub api_key: String,
     pub encryption_key: [u8; 32],
     pub mal_client_id: String,
+    pub db_max_connections: u32,
 }
 
 impl Config {
@@ -34,6 +35,10 @@ impl Config {
             api_key: env("API_KEY"),
             encryption_key: key,
             mal_client_id: env("MAL_CLIENT_ID"),
+            db_max_connections: std::env::var("DB_MAX_CONNECTIONS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20),
         }
     }
 
@@ -54,6 +59,7 @@ impl Config {
             api_key: cli.api_key,
             encryption_key: key,
             mal_client_id: cli.mal_client_id,
+            db_max_connections: cli.db_max_connections,
         }
     }
 }
@@ -78,4 +84,7 @@ struct Cli {
 
     #[arg(long, env = "MAL_CLIENT_ID")]
     mal_client_id: String,
+
+    #[arg(long, env = "DB_MAX_CONNECTIONS", default_value_t = 20)]
+    db_max_connections: u32,
 }

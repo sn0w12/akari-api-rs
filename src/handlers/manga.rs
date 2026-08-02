@@ -99,7 +99,6 @@ struct MangaListRow {
     authors: Vec<String>,
     rating_count: Option<i64>,
     average_rating: Option<f64>,
-    total_count: i64,
 }
 
 impl From<MangaListRow> for MangaResponse {
@@ -194,8 +193,7 @@ macro_rules! manga_full_sql {
              w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
              w.created_at, w.updated_at, \
              cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
-             tr.trackers, r.rating_count, r.average_rating, \
-             0::bigint AS total_count \
+             tr.trackers, r.rating_count, r.average_rating \
              FROM public.works w \
              LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
              LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
@@ -214,7 +212,7 @@ macro_rules! manga_full_sql {
 const MANGA_BY_ID_SQL: &str = manga_full_sql!("WHERE w.id = $1");
 const MANGA_BATCH_SQL: &str = manga_full_sql!("WHERE w.id = ANY($1)");
 
-/// Static SQL for the list/popular QueryBuilder data queries (COUNT(*) OVER() variant).
+/// Static SQL for the list/popular QueryBuilder data queries.
 const MANGA_LIST_FROM: &str = "\
 FROM public.works w \
 LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
@@ -313,20 +311,17 @@ pub async fn list_manga(
         },
     };
 
-    // Count
+    // Count and page query are independent; build both before awaiting either.
     let mut count_builder = QueryBuilder::new("SELECT COUNT(*) FROM public.works w WHERE 1=1");
     apply_filters(&mut count_builder, &filters);
-    let total_count: i64 = count_builder.build_query_scalar().fetch_one(&db).await?;
-    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
 
     // Data
     let mut data_builder = QueryBuilder::new(
-         "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
-          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
-          w.created_at, w.updated_at, \
-          cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
-          tr.trackers, r.rating_count, r.average_rating, \
-          COUNT(*) OVER() AS total_count ",
+        "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
+         w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
+         w.created_at, w.updated_at, \
+         cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
+         tr.trackers, r.rating_count, r.average_rating ",
     );
     data_builder.push(MANGA_LIST_FROM);
     data_builder.push(" WHERE 1=1");
@@ -340,7 +335,7 @@ pub async fn list_manga(
             data_builder.push(" ORDER BY w.created_at DESC");
         }
         "search" => {
-            if let Some(ref q) = filters.search_query {
+            if let Some(q) = &filters.search_query {
                 data_builder.push(" ORDER BY ts_rank(w.search_vector, plainto_tsquery('english', ");
                 data_builder.push_bind(q);
                 data_builder.push(")) DESC");
@@ -358,7 +353,10 @@ pub async fn list_manga(
     data_builder.push(" OFFSET ");
     data_builder.push_bind(offset);
 
-    let rows: Vec<MangaListRow> = data_builder.build_query_as().fetch_all(&db).await?;
+    let count_fut = count_builder.build_query_scalar().fetch_one(&db);
+    let data_fut = data_builder.build_query_as().fetch_all(&db);
+    let (total_count, rows): (i64, Vec<MangaListRow>) = tokio::try_join!(count_fut, data_fut)?;
+    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
     let items: Vec<MangaResponse> = rows.into_iter().map(Into::into).collect();
 
     Ok(Json(SuccessResponse {
@@ -388,15 +386,13 @@ pub async fn popular_manga(
     let offset = ((page - 1) as i64) * (page_size as i64);
     let excluded_genres = params.excluded_genres.unwrap_or_default();
 
-    // Count
+    // Count and page query are independent; build both before awaiting either.
     let mut count_builder = QueryBuilder::new("SELECT COUNT(*) FROM public.works w WHERE 1=1");
     if !excluded_genres.is_empty() {
         count_builder.push(" AND NOT (w.genres && ");
         count_builder.push_bind(&excluded_genres);
         count_builder.push(")");
     }
-    let total_count: i64 = count_builder.build_query_scalar().fetch_one(&db).await?;
-    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
 
     // Data
     let mut data_builder = QueryBuilder::new(
@@ -404,8 +400,7 @@ pub async fn popular_manga(
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
          cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
-         tr.trackers, r.rating_count, r.average_rating, \
-         COUNT(*) OVER() AS total_count ",
+         tr.trackers, r.rating_count, r.average_rating ",
     );
     data_builder.push(MANGA_LIST_FROM);
     data_builder.push(" WHERE 1=1");
@@ -421,7 +416,10 @@ pub async fn popular_manga(
     data_builder.push(" OFFSET ");
     data_builder.push_bind(offset);
 
-    let rows: Vec<MangaListRow> = data_builder.build_query_as().fetch_all(&db).await?;
+    let count_fut = count_builder.build_query_scalar().fetch_one(&db);
+    let data_fut = data_builder.build_query_as().fetch_all(&db);
+    let (total_count, rows): (i64, Vec<MangaListRow>) = tokio::try_join!(count_fut, data_fut)?;
+    let total_pages = ((total_count as f64) / (page_size as f64)).ceil() as i32;
     let items: Vec<MangaResponse> = rows.into_iter().map(Into::into).collect();
 
     Ok(Json(SuccessResponse {
@@ -469,13 +467,18 @@ pub async fn manga_details(
     Path(id): Path<Uuid>,
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<MangaDetailResponse>>, ApiError> {
-    let manga_row: MangaListRow = sqlx::query_as::<_, MangaListRow>(MANGA_BY_ID_SQL)
-        .bind(id)
-        .fetch_optional(&db)
-        .await?
-        .ok_or(ApiError::not_found("Manga not found"))?;
-
-    let chapters = fetch_chapters_for_work(&db, id).await?;
+    // Manga row and chapters are independent; run them concurrently. The 404
+    // branch is preserved: an absent manga row wins over the chapters result.
+    let manga_fut = async {
+        sqlx::query_as::<_, MangaListRow>(MANGA_BY_ID_SQL)
+            .bind(id)
+            .fetch_optional(&db)
+            .await
+            .map_err(ApiError::from)
+    };
+    let chapters_fut = fetch_chapters_for_work(&db, id);
+    let (manga_row, chapters) = tokio::try_join!(manga_fut, chapters_fut)?;
+    let manga_row = manga_row.ok_or(ApiError::not_found("Manga not found"))?;
     let m: MangaResponse = manga_row.into();
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),
@@ -510,27 +513,38 @@ pub async fn manga_chapters(
     Path(id): Path<Uuid>,
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<MangaChapterResponse>>, ApiError> {
-    let chapters = fetch_chapters_for_work(&db, id).await?;
-
-    let preferred_scanlation_group_id: Option<i32> =
+    let chapters_fut = fetch_chapters_for_work(&db, id);
+    let preferred_fut = async {
         sqlx::query_scalar("SELECT preferred_scanlation_group_id FROM public.works WHERE id = $1")
             .bind(id)
             .fetch_optional(&db)
-            .await?
-            .flatten();
+            .await
+            .map_err(ApiError::from)
+    };
+    let scanlators_fut = async {
+        sqlx::query_as::<_, (i32, String)>(
+            "SELECT DISTINCT sg.id, sg.name FROM public.scanlation_groups sg \
+             JOIN public.chapters c ON c.scanlation_group_id = sg.id \
+             WHERE c.work_id = $1 AND sg.id IS NOT NULL \
+             ORDER BY sg.name",
+        )
+        .bind(id)
+        .fetch_all(&db)
+        .await
+        .map_err(ApiError::from)
+    };
 
-    let scanlators: Vec<Scanlator> = sqlx::query_as::<_, (i32, String)>(
-        "SELECT DISTINCT sg.id, sg.name FROM public.scanlation_groups sg \
-         JOIN public.chapters c ON c.scanlation_group_id = sg.id \
-         WHERE c.work_id = $1 AND sg.id IS NOT NULL \
-         ORDER BY sg.name",
-    )
-    .bind(id)
-    .fetch_all(&db)
-    .await?
-    .into_iter()
-    .map(|(id, name)| Scanlator { id, name })
-    .collect();
+    let (chapters, preferred_scanlation_group_id, scanlators) = tokio::try_join!(
+        chapters_fut,
+        preferred_fut,
+        scanlators_fut,
+    )?;
+    let preferred_scanlation_group_id = preferred_scanlation_group_id.flatten();
+
+    let scanlators = scanlators
+        .into_iter()
+        .map(|(id, name)| Scanlator { id, name })
+        .collect();
 
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),
@@ -565,8 +579,7 @@ async fn batch_by_tracker(
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
          cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
-         tr.trackers, r.rating_count, r.average_rating, \
-         0::bigint AS total_count \
+         tr.trackers, r.rating_count, r.average_rating \
           FROM public.works w \
           LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
           LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
@@ -645,24 +658,32 @@ pub async fn manga_recommendations(
 ) -> Result<Json<SuccessResponse<Vec<MangaResponse>>>, ApiError> {
     let limit = params.limit.unwrap_or(20).clamp(1, 100);
 
-    let sql = "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
+    // Select the random candidate set first (materialized, limited), then run
+    // the full projection only for the selected IDs. Preserves ORDER BY
+    // RANDOM() set and order semantics via a window row number.
+    let sql = "WITH candidates AS MATERIALIZED ( \
+         SELECT id, row_number() OVER (ORDER BY random()) AS rn \
+         FROM (SELECT id FROM public.works \
+               WHERE id != $1 AND genres && (SELECT genres FROM public.works WHERE id = $1)) s \
+         LIMIT $2 \
+       ) \
+       SELECT w.id, w.title, w.description, w.status, w.format, w.genres, \
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
          cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
-         tr.trackers, r.rating_count, r.average_rating, \
-         0::bigint AS total_count \
-         FROM public.works w \
-         LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
-         LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
-           FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
-          LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
-            FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
-          LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
-            FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
-          LEFT JOIN LATERAL (SELECT COUNT(*)::bigint AS rating_count, COALESCE(AVG(rating), 0)::double precision AS average_rating \
-            FROM public.work_ratings WHERE work_id = w.id) r ON TRUE \
-          WHERE w.id != $1 AND w.genres && (SELECT genres FROM public.works WHERE id = $1) \
-         ORDER BY RANDOM() LIMIT $2";
+         tr.trackers, r.rating_count, r.average_rating \
+       FROM candidates c \
+       JOIN public.works w ON w.id = c.id \
+       LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
+       LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
+         FROM public.work_authors wa JOIN public.authors a ON a.id = wa.author_id WHERE wa.work_id = w.id) auth ON TRUE \
+       LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('title', wt.title, 'languageCode', wt.language_code, 'titleType', wt.title_type) ORDER BY wt.language_code, wt.title_type), '[]'::json)::text AS alternative_titles \
+         FROM public.work_titles wt WHERE wt.work_id = w.id) alt ON TRUE \
+       LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
+         FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
+       LEFT JOIN LATERAL (SELECT COUNT(*)::bigint AS rating_count, COALESCE(AVG(rating), 0)::double precision AS average_rating \
+         FROM public.work_ratings WHERE work_id = w.id) r ON TRUE \
+       ORDER BY c.rn";
 
     let rows: Vec<MangaListRow> = sqlx::query_as::<_, MangaListRow>(sql)
         .bind(id)
@@ -994,13 +1015,18 @@ pub async fn by_mal_id(
     .await?
     .ok_or(ApiError::not_found("Manga not found"))?;
 
-    let manga_row: MangaListRow = sqlx::query_as::<_, MangaListRow>(MANGA_BY_ID_SQL)
-        .bind(work_id)
-        .fetch_optional(&db)
-        .await?
-        .ok_or(ApiError::not_found("Manga not found"))?;
-
-    let chapters = fetch_chapters_for_work(&db, work_id).await?;
+    // Tracker lookup resolved the work ID; projection and chapters are then
+    // independent and run concurrently.
+    let manga_fut = async {
+        sqlx::query_as::<_, MangaListRow>(MANGA_BY_ID_SQL)
+            .bind(work_id)
+            .fetch_optional(&db)
+            .await
+            .map_err(ApiError::from)
+    };
+    let chapters_fut = fetch_chapters_for_work(&db, work_id);
+    let (manga_row, chapters) = tokio::try_join!(manga_fut, chapters_fut)?;
+    let manga_row = manga_row.ok_or(ApiError::not_found("Manga not found"))?;
 
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),
@@ -1030,13 +1056,18 @@ pub async fn by_ani_id(
     .await?
     .ok_or(ApiError::not_found("Manga not found"))?;
 
-    let manga_row: MangaListRow = sqlx::query_as::<_, MangaListRow>(MANGA_BY_ID_SQL)
-        .bind(work_id)
-        .fetch_optional(&db)
-        .await?
-        .ok_or(ApiError::not_found("Manga not found"))?;
-
-    let chapters = fetch_chapters_for_work(&db, work_id).await?;
+    // Tracker lookup resolved the work ID; projection and chapters are then
+    // independent and run concurrently.
+    let manga_fut = async {
+        sqlx::query_as::<_, MangaListRow>(MANGA_BY_ID_SQL)
+            .bind(work_id)
+            .fetch_optional(&db)
+            .await
+            .map_err(ApiError::from)
+    };
+    let chapters_fut = fetch_chapters_for_work(&db, work_id);
+    let (manga_row, chapters) = tokio::try_join!(manga_fut, chapters_fut)?;
+    let manga_row = manga_row.ok_or(ApiError::not_found("Manga not found"))?;
 
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),
@@ -1162,37 +1193,63 @@ pub async fn chapter_detail(
     let chapter_number = chapter_row.number;
     let sg_id = chapter_row.scanlation_group_id;
 
-    // Prev/next navigation
-    let prev_num: Option<f64> = sqlx::query_scalar(
-        "SELECT number::double precision FROM public.chapters WHERE work_id = $1 AND scanlation_group_id IS NOT DISTINCT FROM $2 AND number < $3 ORDER BY number DESC LIMIT 1",
-    )
-    .bind(id)
-    .bind(sg_id)
-    .bind(chapter_number)
-    .fetch_optional(&db)
-    .await?
-    .flatten();
+    // Prev/next navigation: both bounds in one query (same scanlation-group
+    // predicate and < / > bounds as before). Runs concurrently with the
+    // chapter list, work info, and tracker aggregate.
+    let prev_next_fut = async {
+        sqlx::query_as::<_, (Option<f64>, Option<f64>)>(
+            "SELECT \
+               (SELECT number::double precision FROM public.chapters \
+                  WHERE work_id = $1 AND scanlation_group_id IS NOT DISTINCT FROM $2 AND number < $3 \
+                  ORDER BY number DESC LIMIT 1), \
+               (SELECT number::double precision FROM public.chapters \
+                  WHERE work_id = $1 AND scanlation_group_id IS NOT DISTINCT FROM $2 AND number > $3 \
+                  ORDER BY number ASC LIMIT 1)",
+        )
+        .bind(id)
+        .bind(sg_id)
+        .bind(chapter_number)
+        .fetch_one(&db)
+        .await
+        .map_err(ApiError::from)
+    };
+    let list_fut = async {
+        sqlx::query_as::<_, ChapterListRow>(
+            "SELECT id, number::double precision AS number, title, scanlation_group_id, pages, created_at, updated_at \
+             FROM public.chapters WHERE work_id = $1 ORDER BY number DESC",
+        )
+        .bind(id)
+        .fetch_all(&db)
+        .await
+        .map_err(ApiError::from)
+    };
+    let work_fut = async {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT title, format FROM public.works WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&db)
+        .await
+        .map_err(ApiError::from)
+    };
+    let trackers_fut = async {
+        sqlx::query_scalar::<_, String>(
+            "SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text \
+             FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = $1",
+        )
+        .bind(id)
+        .fetch_one(&db)
+        .await
+        .map_err(ApiError::from)
+    };
 
-    let next_num: Option<f64> = sqlx::query_scalar(
-        "SELECT number::double precision FROM public.chapters WHERE work_id = $1 AND scanlation_group_id IS NOT DISTINCT FROM $2 AND number > $3 ORDER BY number ASC LIMIT 1",
-    )
-    .bind(id)
-    .bind(sg_id)
-    .bind(chapter_number)
-    .fetch_optional(&db)
-    .await?
-    .flatten();
+    let (prev_next, list_rows, work_info, trackers) =
+        tokio::try_join!(prev_next_fut, list_fut, work_fut, trackers_fut)?;
+    let (prev_num, next_num) = prev_next;
+    let (work_title, work_format) = work_info.unwrap_or_default();
 
     // Chapter options list
     // Chapter list for all chapters
-    let list_rows: Vec<ChapterListRow> = sqlx::query_as::<_, ChapterListRow>(
-        "SELECT id, number::double precision AS number, title, scanlation_group_id, pages, created_at, updated_at \
-         FROM public.chapters WHERE work_id = $1 ORDER BY number DESC",
-    )
-    .bind(id)
-    .fetch_all(&db)
-    .await?;
-
     let chapters: Vec<MangaChapter> = list_rows
         .into_iter()
         .map(|r| {
@@ -1208,23 +1265,6 @@ pub async fn chapter_detail(
             }
         })
         .collect();
-
-    // Get work title + format
-    let (work_title, work_format): (String, String) =
-        sqlx::query_as("SELECT title, format FROM public.works WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&db)
-            .await?
-            .unwrap_or_default();
-
-    // Get trackers
-    let trackers: String = sqlx::query_scalar(
-        "SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text \
-         FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = $1",
-    )
-    .bind(id)
-    .fetch_one(&db)
-    .await?;
 
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),
@@ -1359,8 +1399,7 @@ pub async fn recently_viewed(
          w.view_count, w.score::double precision AS score, w.preferred_scanlation_group_id, \
          w.created_at, w.updated_at, \
          cov.url AS cover_url, cov.thumbhash AS cover_thumbhash, auth.authors, alt.alternative_titles, \
-         tr.trackers, r.rating_count, r.average_rating, \
-         0::bigint AS total_count \
+         tr.trackers, r.rating_count, r.average_rating \
          FROM public.works w \
          LEFT JOIN LATERAL (SELECT url, thumbhash FROM public.covers WHERE work_id = w.id AND is_preferred = TRUE LIMIT 1) cov ON TRUE \
          LEFT JOIN LATERAL (SELECT COALESCE(ARRAY_AGG(a.name ORDER BY wa.position, a.name), '{}'::text[]) AS authors \
