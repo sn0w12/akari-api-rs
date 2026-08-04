@@ -9,6 +9,12 @@ pub struct Config {
     pub encryption_key: [u8; 32],
     pub mal_client_id: String,
     pub db_max_connections: u32,
+    /// VAPID subject (e.g. "mailto:admin@example.com"); empty when unset.
+    pub vapid_subject: String,
+    /// VAPID public key, base64url 65-byte uncompressed P-256 point; empty when unset.
+    pub vapid_public_key: String,
+    /// VAPID private key, base64url 32-byte P-256 scalar; empty when unset.
+    pub vapid_private_key: String,
 }
 
 impl Config {
@@ -39,6 +45,9 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(20),
+            vapid_subject: std::env::var("WEBPUSH_SUBJECT").unwrap_or_default(),
+            vapid_public_key: std::env::var("VAPID_PUBLIC_KEY").unwrap_or_default(),
+            vapid_private_key: std::env::var("VAPID_PRIVATE_KEY").unwrap_or_default(),
         }
     }
 
@@ -60,6 +69,9 @@ impl Config {
             encryption_key: key,
             mal_client_id: cli.mal_client_id,
             db_max_connections: cli.db_max_connections,
+            vapid_subject: cli.vapid_subject,
+            vapid_public_key: cli.vapid_public_key,
+            vapid_private_key: cli.vapid_private_key,
         }
     }
 }
@@ -87,4 +99,13 @@ struct Cli {
 
     #[arg(long, env = "DB_MAX_CONNECTIONS", default_value_t = 20)]
     db_max_connections: u32,
+
+    #[arg(long, env = "WEBPUSH_SUBJECT", default_value = "")]
+    vapid_subject: String,
+
+    #[arg(long, env = "VAPID_PUBLIC_KEY", default_value = "")]
+    vapid_public_key: String,
+
+    #[arg(long, env = "VAPID_PRIVATE_KEY", default_value = "")]
+    vapid_private_key: String,
 }

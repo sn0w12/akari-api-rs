@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::extract::State;
 use chrono::{DateTime, Utc};
+use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -34,6 +35,16 @@ pub struct WebsiteNotification {
     pub title: String,
     pub content: String,
     pub created_at: DateTime<Utc>,
+}
+
+/// A push subscription belonging to a user who bookmarked the target manga,
+/// with that user's unread bookmarks count (used as the notification badge).
+#[derive(Debug, sqlx::FromRow)]
+struct PushSubscriptionRow {
+    endpoint: String,
+    p256dh: String,
+    auth: String,
+    unread_count: i32,
 }
 
 /// POST /v2/notifications/subscribe
@@ -108,36 +119,143 @@ pub async fn website_notifications(
 #[utoipa::path(post, path = "/v2/notifications/send", tag = "notifications", responses(
     (status = 200, description = "Success"),
     (status = 400, description = "Bad request", body = ErrorResponseTemplate),
+    (status = 401, description = "Unauthorized", body = ErrorResponseTemplate),
     (status = 500, description = "Internal error", body = ErrorResponseTemplate),
 ))]
 pub async fn send_notification(
-    State(_db): State<DbPool>,
+    State(db): State<DbPool>,
     State(config): State<Config>,
     headers: axum::http::HeaderMap,
-    Json(_body): Json<SendNotificationBody>,
+    Json(body): Json<SendNotificationBody>,
 ) -> Result<Json<SuccessResponse<&'static str>>, ApiError> {
     // Verify API key
     let api_key = headers
         .get("X-API-Key")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
-        .ok_or(ApiError::bad_request("Missing X-API-Key header"))?;
+        .ok_or_else(|| ApiError::Unauthorized {
+            message: "Invalid API key".to_string(),
+        })?;
 
     if api_key != config.api_key {
-        return Err(ApiError::bad_request("Invalid API key"));
+        return Err(ApiError::Unauthorized {
+            message: "Invalid API key".to_string(),
+        });
     }
 
-    // For now, acknowledge the send request.
-    // Full WebPush sending requires VAPID key setup.
-    // The push sending logic would:
-    // 1. Query bookmarked users' push subscriptions
-    // 2. Decrypt p256dh/auth
-    // 3. Send via WebPush protocol
-    // See services/push.rs for the send_webpush function.
+    let vapid = crate::services::push::VapidKeys::parse(
+        &config.vapid_subject,
+        &config.vapid_public_key,
+        &config.vapid_private_key,
+    )
+    .map_err(ApiError::internal)?;
+
+    let subscriptions: Vec<PushSubscriptionRow> = sqlx::query_as::<_, PushSubscriptionRow>(
+        "SELECT DISTINCT \
+           ps.endpoint, ps.p256dh, ps.auth, \
+           COALESCE(( \
+             SELECT COUNT(*) FROM public.user_library_entries ule \
+             WHERE ule.user_id = ps.user_id AND EXISTS ( \
+               SELECT 1 FROM public.chapters ch \
+               WHERE ch.work_id = ule.work_id \
+                 AND ch.number > (SELECT COALESCE(c.number, 0) FROM public.chapters c WHERE c.id = ule.last_read_chapter_id) \
+             ) \
+           ), 0)::integer AS unread_count \
+         FROM public.push_subscriptions ps \
+         INNER JOIN public.user_library_entries ub ON ps.user_id = ub.user_id \
+         WHERE ub.work_id = $1",
+    )
+    .bind(body.manga_id)
+    .fetch_all(&db)
+    .await?;
+
+    if subscriptions.is_empty() {
+        return Ok(Json(SuccessResponse {
+            result: "Success".to_string(),
+            status: 200,
+            data: "Notifications sent successfully",
+        }));
+    }
+
+    let http = reqwest::Client::new();
+    let expired: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+    let title = body.title.clone();
+    let body_text = body.body.clone();
+    let url = body.url.clone();
+    let manga_id_str = body.manga_id.to_string();
+    let tag = format!("manga-{}", body.manga_id);
+
+    // Deliver to every subscription concurrently; collect dead ones.
+    futures::stream::iter(subscriptions)
+        .map(|row| {
+            let http = &http;
+            let expired = &expired;
+            let vapid = &vapid;
+            let enc_key = &config.encryption_key;
+            let payload = serde_json::json!({
+                "title": title,
+                "body": body_text,
+                "url": url,
+                "mangaId": manga_id_str,
+                "tag": tag,
+                "badge": row.unread_count,
+            })
+            .to_string()
+            .into_bytes();
+            async move {
+                let p256dh = match crate::services::push::decrypt(&row.p256dh, enc_key) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!(endpoint = %row.endpoint, error = %e, "failed to decrypt p256dh, skipping");
+                        return;
+                    }
+                };
+                let auth = match crate::services::push::decrypt(&row.auth, enc_key) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!(endpoint = %row.endpoint, error = %e, "failed to decrypt auth, skipping");
+                        return;
+                    }
+                };
+
+                match crate::services::push::send_webpush(
+                    http,
+                    &row.endpoint,
+                    &p256dh,
+                    &auth,
+                    &payload,
+                    vapid,
+                )
+                .await
+                {
+                    Ok(()) => tracing::debug!(endpoint = %row.endpoint, "push notification sent"),
+                    Err(crate::services::push::PushError::Expired) => {
+                        tracing::info!(endpoint = %row.endpoint, "push subscription expired, removing");
+                        expired.lock().unwrap().push(row.endpoint);
+                    }
+                    Err(e) => {
+                        tracing::warn!(endpoint = %row.endpoint, error = %e, "push delivery failed");
+                    }
+                }
+            }
+        })
+        .buffer_unordered(16)
+        .collect::<Vec<_>>()
+        .await;
+
+    // Clean up subscriptions the push service reported as gone (404/410).
+    let expired = std::mem::take(&mut *expired.lock().unwrap());
+    if !expired.is_empty() {
+        sqlx::query("DELETE FROM public.push_subscriptions WHERE endpoint = ANY($1)")
+            .bind(&expired)
+            .execute(&db)
+            .await?;
+    }
 
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),
         status: 200,
-        data: "Notifications queued",
+        data: "Notifications sent successfully",
     }))
 }

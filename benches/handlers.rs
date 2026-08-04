@@ -103,6 +103,9 @@ fn bench_config() -> Config {
         encryption_key: key,
         mal_client_id: env_or("MAL_CLIENT_ID", "bench-mal-client"),
         db_max_connections: pool_max_connections(),
+        vapid_subject: env_or("WEBPUSH_SUBJECT", ""),
+        vapid_public_key: env_or("VAPID_PUBLIC_KEY", ""),
+        vapid_private_key: env_or("VAPID_PRIVATE_KEY", ""),
     }
 }
 
