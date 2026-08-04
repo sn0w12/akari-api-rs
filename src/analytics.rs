@@ -13,6 +13,7 @@ use tower::{Layer, Service};
 
 const BATCH_SIZE: usize = 50;
 const FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+const IGNORED_PATHS: [&str; 2] = ["/v2/analytics", "/v2/notifications/send"];
 
 #[derive(Debug, Clone)]
 pub struct AnalyticsData {
@@ -83,7 +84,7 @@ where
         let method = req.method().to_string();
 
         // Don't record analytics requests for the analytics endpoints themselves
-        if path.starts_with("/v2/analytics") {
+        if IGNORED_PATHS.iter().any(|&p| path.starts_with(p)) {
             return Box::pin(self.inner.call(req));
         }
 
