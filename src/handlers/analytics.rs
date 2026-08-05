@@ -9,8 +9,8 @@ use crate::auth::AdminAuthUser;
 use crate::db::DbPool;
 use crate::error::{ApiError, ErrorResponseTemplate};
 use crate::models::analytics::{
-    AnalyticsOverviewResponse, AnalyticsRequestRow, AnalyticsSlowestRoute, AnalyticsTimeseriesPoint,
-    AnalyticsTopItem,
+    AnalyticsOverviewResponse, AnalyticsRequestRow, AnalyticsSlowestRoute,
+    AnalyticsTimeseriesPoint, AnalyticsTopItem,
 };
 use crate::response::{PaginatedResponse, SuccessResponse};
 

@@ -1,10 +1,10 @@
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
+use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::{Request, StatusCode, header};
-use axum::Router;
 use criterion::{Criterion, criterion_group, criterion_main};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -52,10 +52,7 @@ fn ani_id() -> i32 {
 }
 
 fn user_id() -> String {
-    env_or(
-        "BENCH_USER_ID",
-        "sENy8w7haiU1VN3oVHkxvfihAQDuDhq8",
-    )
+    env_or("BENCH_USER_ID", "sENy8w7haiU1VN3oVHkxvfihAQDuDhq8")
 }
 
 fn session_token() -> String {
@@ -174,8 +171,14 @@ fn bench_handlers(c: &mut Criterion) {
         .await;
         assert!(r.is_ok(), "manga/list must succeed");
         let data = r.unwrap().0.data;
-        assert!(!data.items.is_empty(), "manga/list must return rows (fixture)");
-        assert!(data.total_items > 0, "manga/list totalItems must be positive");
+        assert!(
+            !data.items.is_empty(),
+            "manga/list must return rows (fixture)"
+        );
+        assert!(
+            data.total_items > 0,
+            "manga/list totalItems must be positive"
+        );
     });
     bench_one(c, "manga/list-genre", || async {
         let r = manga::list_manga(
@@ -598,7 +601,10 @@ fn bench_http(c: &mut Criterion) {
             &s,
         );
     }
-    report_stats("http/manga-list concurrency (per-request latency)", &samples);
+    report_stats(
+        "http/manga-list concurrency (per-request latency)",
+        &samples,
+    );
 }
 
 fn bench_http_prod(c: &mut Criterion) {

@@ -1,5 +1,5 @@
-pub mod anilist;
 pub mod analytics;
+pub mod anilist;
 pub mod author;
 pub mod bookmarks;
 pub mod comments;

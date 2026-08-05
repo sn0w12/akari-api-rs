@@ -3,7 +3,7 @@ use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use rand::RngCore;
 use rand::rngs::OsRng;
-use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_128_GCM};
+use ring::aead::{AES_128_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use ring::agreement::{ECDH_P256, EphemeralPrivateKey, UnparsedPublicKey, agree_ephemeral};
 use ring::hkdf::{HKDF_SHA256, Salt};
 use ring::rand::SystemRandom;
@@ -203,8 +203,12 @@ pub fn encrypt_message(p256dh: &str, auth: &str, plaintext: &[u8]) -> Result<Vec
     );
 
     let mut in_out = plaintext.to_vec();
-    key.seal_in_place_append_tag(Nonce::assume_unique_for_key(nonce_bytes), Aad::from(&header[..]), &mut in_out)
-        .map_err(|e| format!("AES-GCM seal failed: {:?}", e))?;
+    key.seal_in_place_append_tag(
+        Nonce::assume_unique_for_key(nonce_bytes),
+        Aad::from(&header[..]),
+        &mut in_out,
+    )
+    .map_err(|e| format!("AES-GCM seal failed: {:?}", e))?;
 
     let mut payload = header;
     payload.extend_from_slice(&in_out);
@@ -247,7 +251,9 @@ fn create_vapid_jwt(
 /// Extracts the origin (scheme://host[:port]) from a push endpoint URL.
 fn origin_of(endpoint: &str) -> Result<String, String> {
     let url = reqwest::Url::parse(endpoint).map_err(|e| format!("invalid endpoint URL: {}", e))?;
-    let host = url.host_str().ok_or_else(|| "endpoint URL has no host".to_string())?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| "endpoint URL has no host".to_string())?;
     let port = match url.port() {
         Some(p) => format!(":{}", p),
         None => String::new(),
@@ -269,8 +275,13 @@ pub async fn send_webpush(
 ) -> Result<(), PushError> {
     let body = encrypt_message(p256dh, auth, payload).map_err(PushError::Crypto)?;
     let audience = origin_of(endpoint).map_err(PushError::Crypto)?;
-    let jwt = create_vapid_jwt(&vapid.subject, &vapid.public_key, &vapid.private_key, &audience)
-        .map_err(PushError::Crypto)?;
+    let jwt = create_vapid_jwt(
+        &vapid.subject,
+        &vapid.public_key,
+        &vapid.private_key,
+        &audience,
+    )
+    .map_err(PushError::Crypto)?;
 
     let resp = client
         .post(endpoint)
@@ -324,7 +335,12 @@ mod tests {
 
     /// Browser-side decryptor for aes128gcm, implemented independently from
     /// `encrypt_message` following RFC 8291, to cross-check the framing.
-    fn browser_side_decrypt(payload: &[u8], ua_private: EphemeralPrivateKey, ua_public: &[u8], auth: &[u8]) -> Vec<u8> {
+    fn browser_side_decrypt(
+        payload: &[u8],
+        ua_private: EphemeralPrivateKey,
+        ua_public: &[u8],
+        auth: &[u8],
+    ) -> Vec<u8> {
         assert!(payload.len() > 21 + 65);
         let rs = u32::from_be_bytes(payload[16..20].try_into().unwrap());
         assert_eq!(rs, 4096);
@@ -358,7 +374,11 @@ mod tests {
         let mut in_out = ciphertext.to_vec();
         let header = &payload[..21 + idlen];
         let pt = key
-            .open_in_place(Nonce::assume_unique_for_key(nonce), Aad::from(header), &mut in_out)
+            .open_in_place(
+                Nonce::assume_unique_for_key(nonce),
+                Aad::from(header),
+                &mut in_out,
+            )
             .unwrap();
         pt.to_vec()
     }
@@ -396,8 +416,13 @@ mod tests {
         )
         .unwrap();
 
-        let jwt = create_vapid_jwt(&keys.subject, &keys.public_key, &keys.private_key, "https://fcm.googleapis.com")
-            .unwrap();
+        let jwt = create_vapid_jwt(
+            &keys.subject,
+            &keys.public_key,
+            &keys.private_key,
+            "https://fcm.googleapis.com",
+        )
+        .unwrap();
 
         let mut parts = jwt.split('.');
         let header_b64 = parts.next().unwrap();
@@ -439,7 +464,9 @@ mod tests {
         assert!(VapidKeys::parse("sub", "", "def").is_err());
         assert!(VapidKeys::parse("sub", "not-b64!!", "def").is_err());
         // Wrong key lengths.
-        assert!(VapidKeys::parse("sub", "YWJj", "0SKqYOAmO5iOI5BLRKcjrKgrD2XubnpSUYurfg65nWI").is_err());
+        assert!(
+            VapidKeys::parse("sub", "YWJj", "0SKqYOAmO5iOI5BLRKcjrKgrD2XubnpSUYurfg65nWI").is_err()
+        );
         // Valid round trip.
         assert!(
             VapidKeys::parse(

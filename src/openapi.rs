@@ -1,8 +1,8 @@
 use utoipa::OpenApi;
 
+use crate::handlers::analytics::AnalyticsInterval;
 use crate::models::analytics::*;
 use crate::models::bookmark::*;
-use crate::handlers::analytics::AnalyticsInterval;
 use crate::models::chapter::*;
 use crate::models::comment::*;
 use crate::models::cover::Cover;

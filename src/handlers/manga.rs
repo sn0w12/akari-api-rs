@@ -10,9 +10,7 @@ use uuid::Uuid;
 use crate::auth::{AuthUser, OptionalAuthUser};
 use crate::db::DbPool;
 use crate::error::{ApiError, ErrorResponseTemplate};
-use crate::models::chapter::{
-    ChapterNavigation, ChapterResponse, MangaChapter, Scanlator,
-};
+use crate::models::chapter::{ChapterNavigation, ChapterResponse, MangaChapter, Scanlator};
 use crate::models::cover::Cover;
 use crate::models::manga_type::WorkFormat;
 use crate::models::relationship::WorkRelationship;
@@ -552,11 +550,8 @@ pub async fn manga_chapters(
         .map_err(ApiError::from)
     };
 
-    let (chapters, preferred_scanlation_group_id, scanlators) = tokio::try_join!(
-        chapters_fut,
-        preferred_fut,
-        scanlators_fut,
-    )?;
+    let (chapters, preferred_scanlation_group_id, scanlators) =
+        tokio::try_join!(chapters_fut, preferred_fut, scanlators_fut,)?;
     let preferred_scanlation_group_id = preferred_scanlation_group_id.flatten();
 
     let scanlators = scanlators
@@ -755,10 +750,11 @@ pub async fn get_work_relationships(
         return Err(ApiError::not_found("Manga not found"));
     }
 
-    let edges: Vec<RelationshipEdge> = sqlx::query_as::<_, RelationshipEdge>(WORK_RELATIONSHIPS_SQL)
-        .bind(id)
-        .fetch_all(&db)
-        .await?;
+    let edges: Vec<RelationshipEdge> =
+        sqlx::query_as::<_, RelationshipEdge>(WORK_RELATIONSHIPS_SQL)
+            .bind(id)
+            .fetch_all(&db)
+            .await?;
 
     if edges.is_empty() {
         return Ok(Json(SuccessResponse {
@@ -775,8 +771,7 @@ pub async fn get_work_relationships(
         .fetch_all(&db)
         .await?;
 
-    let mut rows_by_id: HashMap<Uuid, MangaListRow> =
-        rows.into_iter().map(|r| (r.id, r)).collect();
+    let mut rows_by_id: HashMap<Uuid, MangaListRow> = rows.into_iter().map(|r| (r.id, r)).collect();
 
     let items: Vec<WorkRelationship> = edges
         .into_iter()
@@ -1285,7 +1280,10 @@ pub async fn chapter_detail(
             let sg_id = r.scanlation_group_id;
             MangaChapter {
                 id: r.id,
-                title: r.title.clone().unwrap_or_else(|| format!("Chapter {}", r.number)),
+                title: r
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| format!("Chapter {}", r.number)),
                 number: r.number,
                 scanlator_id: sg_id.unwrap_or(0),
                 pages: r.pages.map(|p| p as i32),
@@ -1310,7 +1308,10 @@ pub async fn chapter_detail(
             chapters,
             scanlator: sg_id.map(|sid| Scanlator {
                 id: sid,
-                name: chapter_row.scanlation_group_name.clone().unwrap_or_default(),
+                name: chapter_row
+                    .scanlation_group_name
+                    .clone()
+                    .unwrap_or_default(),
             }),
             work_id: id,
             work_title,

@@ -8,7 +8,7 @@ use utoipa::OpenApi;
 use crate::analytics::AnalyticsLayer;
 use crate::auth::AppState;
 use crate::handlers::{
-    anilist, analytics, author, bookmarks, comments, genre, lists, mal, manga, notifications, user,
+    analytics, anilist, author, bookmarks, comments, genre, lists, mal, manga, notifications, user,
 };
 use crate::middleware::mal_token_refresh::MalTokenRefreshLayer;
 use crate::middleware::rate_limit::RateLimitLayer;

@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use akari_api_rs::app::build_app;
 use akari_api_rs::auth::AppState;
@@ -204,7 +204,11 @@ async fn test_auth_required() {
 async fn test_manga_detail_fixture() {
     let (client, addr) = spawn_app().await;
     let resp = client
-        .get(format!("http://{}/v2/manga/{}/details", addr, fixture_work_id()))
+        .get(format!(
+            "http://{}/v2/manga/{}/details",
+            addr,
+            fixture_work_id()
+        ))
         .send()
         .await
         .unwrap();

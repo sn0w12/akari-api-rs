@@ -51,9 +51,11 @@ pub async fn list_user_lists(
 ) -> Result<Json<SuccessResponse<PaginatedResponse<UserListResponse>>>, ApiError> {
     let (page, page_size, offset) = pagination(params.page, params.page_size);
 
-    let count_fut = sqlx::query_scalar("SELECT COUNT(*) FROM public.user_lists WHERE user_id = $1 AND is_public = TRUE")
-        .bind(&user_id)
-        .fetch_one(&db);
+    let count_fut = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM public.user_lists WHERE user_id = $1 AND is_public = TRUE",
+    )
+    .bind(&user_id)
+    .fetch_one(&db);
     let data_fut = sqlx::query_as::<_, ListRow>(
         "SELECT ul.id, ul.user_id, ul.title, ul.description, ul.is_public, ul.created_at, ul.updated_at, \
          (SELECT COUNT(*) FROM public.user_list_entries ule WHERE ule.list_id = ul.id)::bigint AS total_entries \
