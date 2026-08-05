@@ -336,9 +336,27 @@ pub async fn list_manga(
         }
         "search" => {
             if let Some(q) = &filters.search_query {
-                data_builder.push(" ORDER BY ts_rank(w.search_vector, plainto_tsquery('english', ");
+                data_builder.push(" ORDER BY CASE WHEN lower(trim(w.title)) = lower(trim(");
                 data_builder.push_bind(q);
-                data_builder.push(")) DESC");
+                data_builder.push(")) THEN 0 WHEN position(lower(trim(");
+                data_builder.push_bind(q);
+                data_builder.push(
+                    ")) in lower(trim(w.title))) = 1 THEN 1 ELSE 2 END ASC, \
+                     ts_rank(w.search_vector, phraseto_tsquery('english', ",
+                );
+                data_builder.push_bind(q);
+                data_builder.push(
+                    ")) DESC NULLS LAST, ts_rank(w.search_vector, plainto_tsquery('english', ",
+                );
+                data_builder.push_bind(q);
+                data_builder.push(")) DESC, CASE WHEN position(lower(trim(");
+                data_builder.push_bind(q);
+                data_builder.push(")) in lower(trim(w.title))) > 0 THEN position(lower(trim(");
+                data_builder.push_bind(q);
+                data_builder.push(
+                    ")) in lower(trim(w.title))) ELSE 2147483647 END ASC, \
+                     w.score DESC NULLS LAST, w.view_count DESC, w.updated_at DESC, w.id ASC",
+                );
             } else {
                 data_builder.push(" ORDER BY w.updated_at DESC");
             }
@@ -790,7 +808,10 @@ pub async fn search_manga(
     State(db): State<DbPool>,
 ) -> Result<Json<SuccessResponse<Vec<MangaSearchResponse>>>, ApiError> {
     let limit = params.limit.unwrap_or(20).clamp(1, 100);
-    let query = params.query.filter(|s| !s.is_empty());
+    let query = params
+        .query
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     let items: Vec<MangaSearchResponse> = if let Some(ref q) = query {
         const SQL: &str = "SELECT w.id, w.title, w.description, w.status, w.format, w.genres, w.view_count, w.score::double precision AS score, \
@@ -806,7 +827,15 @@ pub async fn search_manga(
              LEFT JOIN LATERAL (SELECT COALESCE(json_agg(json_build_object('code', t.code, 'id', wt.tracker_work_id) ORDER BY t.code), '[]'::json)::text AS trackers \
                FROM public.work_trackers wt JOIN public.trackers t ON t.id = wt.tracker_id WHERE wt.work_id = w.id) tr ON TRUE \
              WHERE w.search_vector @@ plainto_tsquery('english', $1) \
-             ORDER BY rank DESC \
+             ORDER BY CASE WHEN lower(trim(w.title)) = lower(trim($1)) THEN 0 \
+                           WHEN position(lower(trim($1)) in lower(trim(w.title))) = 1 THEN 1 \
+                           ELSE 2 END ASC, \
+                      ts_rank(w.search_vector, phraseto_tsquery('english', $1)) DESC NULLS LAST, \
+                      rank DESC, \
+                      CASE WHEN position(lower(trim($1)) in lower(trim(w.title))) > 0 \
+                           THEN position(lower(trim($1)) in lower(trim(w.title))) \
+                           ELSE 2147483647 END ASC, \
+                      w.score DESC NULLS LAST, w.view_count DESC, w.updated_at DESC, w.id ASC \
              LIMIT $2";
 
         #[derive(Debug, sqlx::FromRow)]
@@ -1026,7 +1055,7 @@ pub async fn by_mal_id(
     };
     let chapters_fut = fetch_chapters_for_work(&db, work_id);
     let (manga_row, chapters) = tokio::try_join!(manga_fut, chapters_fut)?;
-    let manga_row = manga_row.ok_or(ApiError::not_found("Manga not found"))?;
+    let manga_row: MangaListRow = manga_row.ok_or(ApiError::not_found("Manga not found"))?;
 
     Ok(Json(SuccessResponse {
         result: "Success".to_string(),

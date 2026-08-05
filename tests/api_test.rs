@@ -93,6 +93,71 @@ async fn test_manga_search() {
 }
 
 #[tokio::test]
+async fn test_manga_search_title_priority() {
+    let (client, addr) = spawn_app().await;
+
+    // Exact primary-title match must outrank a longer title containing the query.
+    let resp = client
+        .get(format!(
+            "http://{}/v2/manga/search?query=chainsaw&limit=20",
+            addr
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["result"], "Success");
+    let items = body["data"].as_array().unwrap();
+    assert!(
+        !items.is_empty(),
+        "chainsaw search must return rows (fixture)"
+    );
+    assert_eq!(
+        items[0]["title"].as_str().unwrap(),
+        "Chainsaw Man",
+        "exact primary-title match must rank first"
+    );
+
+    // The duplicate discovery surface must apply the same ordering.
+    let resp = client
+        .get(format!(
+            "http://{}/v2/manga/list?sortBy=search&query=chainsaw&page=1&pageSize=20",
+            addr
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["result"], "Success");
+    let items = body["data"]["items"].as_array().unwrap();
+    assert!(
+        !items.is_empty(),
+        "chainsaw list search must return rows (fixture)"
+    );
+    assert_eq!(
+        items[0]["title"].as_str().unwrap(),
+        "Chainsaw Man",
+        "list search must rank exact primary-title match first"
+    );
+
+    // An all-whitespace query is treated as no query: successful empty data.
+    let resp = client
+        .get(format!("http://{}/v2/manga/search?query=%20%20", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["result"], "Success");
+    assert!(
+        body["data"].as_array().unwrap().is_empty(),
+        "all-whitespace query must return empty data"
+    );
+}
+
+#[tokio::test]
 async fn test_manga_ids() {
     let (client, addr) = spawn_app().await;
     let resp = client
