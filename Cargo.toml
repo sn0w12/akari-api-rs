@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dev-dependencies]
+cargo-husky = { version = "1", default-features = false, features = ["precommit-hook", "run-cargo-check", "run-cargo-fmt"] }
 criterion = { version = "0.6", features = ["async_futures", "async_tokio"] }
 
 [[bench]]
