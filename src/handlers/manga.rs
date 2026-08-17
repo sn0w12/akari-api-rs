@@ -77,7 +77,7 @@ fn pagination(page: Option<i32>, page_size: Option<i32>) -> (i32, i32, i64) {
 
 #[derive(Debug, sqlx::FromRow)]
 #[allow(dead_code)]
-struct MangaListRow {
+pub(crate) struct MangaListRow {
     id: Uuid,
     title: String,
     description: String,
@@ -207,7 +207,7 @@ macro_rules! manga_full_sql {
     };
 }
 
-const MANGA_BY_ID_SQL: &str = manga_full_sql!("WHERE w.id = $1");
+pub(crate) const MANGA_BY_ID_SQL: &str = manga_full_sql!("WHERE w.id = $1");
 const MANGA_BATCH_SQL: &str = manga_full_sql!("WHERE w.id = ANY($1)");
 
 /// Static SQL for the list/popular QueryBuilder data queries.

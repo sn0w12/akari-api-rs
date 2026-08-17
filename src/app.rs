@@ -8,7 +8,8 @@ use utoipa::OpenApi;
 use crate::analytics::AnalyticsLayer;
 use crate::auth::AppState;
 use crate::handlers::{
-    analytics, anilist, author, bookmarks, comments, genre, lists, mal, manga, notifications, user,
+    analytics, anilist, author, bookmarks, comments, genre, lists, mal, manga, notifications, og,
+    user,
 };
 use crate::middleware::mal_token_refresh::MalTokenRefreshLayer;
 use crate::middleware::rate_limit::RateLimitLayer;
@@ -127,7 +128,10 @@ pub fn build_app(state: AppState, analytics_enabled: bool) -> Router {
         .route("/v2/analytics/timeseries", get(analytics::timeseries))
         .route("/v2/analytics/top", get(analytics::top))
         .route("/v2/analytics/slowest", get(analytics::slowest))
-        .route("/v2/analytics/requests", get(analytics::requests));
+        .route("/v2/analytics/requests", get(analytics::requests))
+        .route("/v2/og/manga/{id}", get(og::manga_og))
+        .route("/v2/og/author/{name}", get(og::author_og))
+        .route("/v2/og/general", get(og::general_og));
 
     let router = if analytics_enabled {
         router.route_layer(AnalyticsLayer::new(state.db.clone()))

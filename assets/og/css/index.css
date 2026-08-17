@@ -1,0 +1,204 @@
+:root {
+    --font-sans: "Geist Variable", sans-serif;
+    --font-heading: "Geist Variable", sans-serif;
+    --font-mono: "Geist Mono Variable", monospace;
+
+    --radius: 0.5rem;
+    --radius-sm: calc(var(--radius) * 0.5);
+    --radius-md: calc(var(--radius) * 0.75);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.5);
+    --radius-2xl: calc(var(--radius) * 2);
+    --radius-3xl: calc(var(--radius) * 3);
+
+    --spacing: 0.25rem;
+
+    --background: var(--color-white);
+    --foreground: var(--color-neutral-800);
+    --card: var(--color-white);
+    --card-foreground: var(--color-neutral-800);
+    --popover: var(--color-white);
+    --popover-foreground: var(--color-neutral-800);
+    --primary: var(--color-neutral-800);
+    --primary-foreground: var(--color-neutral-50);
+    --secondary: color-mix(in oklab, var(--color-black) 4%, transparent);
+    --secondary-foreground: var(--color-neutral-800);
+    --muted: color-mix(in oklab, var(--color-black) 4%, transparent);
+    --muted-foreground: color-mix(
+        in srgb,
+        var(--color-neutral-500) 90%,
+        var(--color-black)
+    );
+    --accent: color-mix(in oklab, var(--color-black) 4%, transparent);
+    --accent-foreground: var(--color-neutral-800);
+    --destructive: oklch(0.631 0.2357 17.99);
+    --destructive-foreground: oklch(63.801% 0.18664 12.385);
+    --info: var(--color-blue-500);
+    --info-foreground: var(--color-blue-700);
+    --success: var(--color-emerald-500);
+    --success-foreground: var(--color-emerald-700);
+    --warning: var(--color-amber-500);
+    --warning-foreground: var(--color-amber-700);
+    --border: color-mix(in oklab, var(--color-black) 8%, transparent);
+    --input: color-mix(in oklab, var(--color-black) 10%, transparent);
+    --ring: var(--color-neutral-400);
+    --sidebar: var(--color-neutral-50);
+    --sidebar-foreground: var(--foreground);
+    --sidebar-primary: var(--color-neutral-800);
+    --sidebar-primary-foreground: var(--color-neutral-50);
+    --sidebar-accent: color-mix(in oklab, var(--color-black) 4%, transparent);
+    --sidebar-accent-foreground: var(--color-neutral-800);
+    --sidebar-border: color-mix(in oklab, var(--color-black) 6%, transparent);
+    --sidebar-ring: var(--color-neutral-400);
+
+    --accent-color: oklch(0.631 0.2157 287.24);
+    --accent-color-foreground: oklch(76.838% 0.09842 293.239);
+
+    --space-2: calc(var(--spacing) * 2);
+    --space-4: calc(var(--spacing) * 4);
+    --space-6: calc(var(--spacing) * 6);
+    --space-8: calc(var(--spacing) * 8);
+}
+
+.dark {
+    --background: color-mix(
+        in srgb,
+        var(--color-neutral-950) 96%,
+        var(--color-white)
+    );
+    --foreground: var(--color-neutral-100);
+    --card: color-mix(in srgb, var(--background) 94%, var(--color-white));
+    --card-foreground: var(--color-neutral-100);
+    --popover: color-mix(in srgb, var(--background) 94%, var(--color-white));
+    --popover-foreground: var(--color-neutral-100);
+    --primary: var(--color-neutral-100);
+    --primary-foreground: var(--color-neutral-800);
+    --secondary: color-mix(in oklab, var(--color-white) 4%, transparent);
+    --secondary-foreground: var(--color-neutral-100);
+    --muted: color-mix(in oklab, var(--color-white) 4%, transparent);
+    --muted-foreground: color-mix(
+        in srgb,
+        var(--color-neutral-500) 90%,
+        var(--color-white)
+    );
+    --accent: color-mix(in oklab, var(--color-white) 4%, transparent);
+    --accent-foreground: var(--color-neutral-100);
+    --destructive: oklch(0.631 0.2357 17.99);
+    --destructive-foreground: oklch(63.801% 0.18664 12.385);
+    --info: var(--color-blue-500);
+    --info-foreground: var(--color-blue-400);
+    --success: var(--color-emerald-500);
+    --success-foreground: var(--color-emerald-400);
+    --warning: var(--color-amber-500);
+    --warning-foreground: var(--color-amber-400);
+    --border: color-mix(in oklab, var(--color-white) 6%, transparent);
+    --input: color-mix(in oklab, var(--color-white) 8%, transparent);
+    --ring: var(--color-neutral-500);
+    --sidebar: color-mix(
+        in srgb,
+        var(--color-neutral-950) 98%,
+        var(--color-white)
+    );
+    --sidebar-foreground: var(--foreground);
+    --sidebar-primary: var(--color-neutral-100);
+    --sidebar-primary-foreground: var(--color-neutral-800);
+    --sidebar-accent: color-mix(in oklab, var(--color-white) 4%, transparent);
+    --sidebar-accent-foreground: var(--color-neutral-100);
+    --sidebar-border: color-mix(in oklab, var(--color-white) 5%, transparent);
+    --sidebar-ring: var(--color-neutral-400);
+
+    --scrollbar-handle: color-mix(in oklab, var(--card) 94%, var(--foreground));
+}
+
+html {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+html,
+body {
+    background: transparent;
+    margin: 0;
+}
+
+.og {
+    width: 1200px;
+    height: 630px;
+}
+
+.separator {
+    width: 100%;
+    height: 4px;
+    background-color: var(--border);
+}
+
+.card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-4);
+    background-color: var(--card);
+    background-clip: padding-box;
+    color: var(--card-foreground);
+    border: 1px solid;
+    border-color: var(--border);
+    padding: var(--space-4);
+    border-radius: var(--radius-2xl);
+    width: 100%;
+    height: 100%;
+}
+
+.dark .card {
+    background-clip: border-box;
+}
+.card::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    border-radius: calc(var(--radius-2xl) - 1px);
+    box-shadow: 0 1px color-mix(in oklab, var(--color-black) 4%, transparent);
+}
+
+.dark .card::before {
+    box-shadow: 0 -1px color-mix(in oklab, var(--color-white) 6%, transparent);
+}
+
+.badge {
+    display: inline-flex;
+    position: relative;
+    font-size: 1.5rem;
+    height: calc(var(--spacing) * 8.5);
+    padding-inline: calc(calc(var(--spacing) * 1.5) - 1px);
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+}
+
+.badge.primary {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+}
+.badge.secondary {
+    background-color: var(--secondary);
+    color: var(--secondary-foreground);
+}
+.badge.warning {
+    background-color: var(--warning);
+    color: var(--warning-foreground);
+}
+.dark .badge.warning {
+    background-color: color-mix(in oklab, var(--warning) 16%, transparent);
+}
+.badge.destructive {
+    background-color: var(--destructive);
+    color: var(--color-white);
+}
+
+.star {
+    flex-shrink: 0;
+}

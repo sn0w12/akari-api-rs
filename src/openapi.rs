@@ -101,6 +101,10 @@ use crate::models::work::*;
         crate::handlers::analytics::top,
         crate::handlers::analytics::slowest,
         crate::handlers::analytics::requests,
+        // OG
+        crate::handlers::og::manga_og,
+        crate::handlers::og::author_og,
+        crate::handlers::og::general_og,
     ),
     components(
         schemas(
@@ -159,6 +163,7 @@ use crate::models::work::*;
         (name = "anilist", description = "AniList proxy"),
         (name = "notifications", description = "Push notifications"),
         (name = "analytics", description = "Request analytics"),
+        (name = "og", description = "Open Graph image generation"),
     )
 )]
 pub struct ApiDoc;

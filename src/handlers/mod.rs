@@ -8,4 +8,5 @@ pub mod lists;
 pub mod mal;
 pub mod manga;
 pub mod notifications;
+pub mod og;
 pub mod user;

@@ -1,0 +1,98 @@
+<html>
+    <head>
+        <style>
+            {{{css}}}
+        </style>
+    </head>
+    <body style="font-family: var(--font-sans)" class="og {{theme}}">
+        <div
+            class="card"
+            style="flex-direction: row; justify-content: space-between"
+        >
+            <img
+                src="{{cover}}?width=400"
+                width="400"
+                style="border-radius: var(--radius-xl)"
+            />
+            <div
+                style="
+                    flex-grow: 1;
+                    height: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                "
+            >
+                <header
+                    style="
+                        display: flex;
+                        flex-direction: column;
+                        gap: var(--space-6);
+                    "
+                >
+                    <h1 style="font-size: 4rem">{{title}}</h1>
+                    <div class="separator"></div>
+                    <div
+                        style="
+                            display: flex;
+                            flex-direction: row;
+                            flex-wrap: wrap;
+                            gap: var(--space-4);
+                        "
+                    >
+                        {{#each authors}}
+                            <p class="badge primary">{{this}}</p>
+                        {{/each}}
+                    </div>
+                    <div
+                        style="
+                            display: flex;
+                            flex-direction: row;
+                            flex-wrap: wrap;
+                            gap: var(--space-4);
+                        "
+                    >
+                        {{#each genres.default}}
+                            <p class="badge secondary">Shoujo</p>
+                        {{/each}}
+                        {{#each genres.warning}}
+                            <p class="badge warning">Ecchi</p>
+                        {{/each}}
+                        {{#each genres.destructive}}
+                            <p class="badge destructive">Adult</p>
+                        {{/each}}
+                    </div>
+                </header>
+                <footer style="display: flex; justify-content: end">
+                    {{#each stars.full}}
+                        <img
+                            class="star"
+                            src="{{../star_full}}"
+                            width="48"
+                            height="48"
+                            alt=""
+                        />
+                    {{/each}}
+                    {{#each stars.half}}
+                        <img
+                            class="star"
+                            src="{{../star_half}}"
+                            width="48"
+                            height="48"
+                            alt=""
+                        />
+                    {{/each}}
+                    {{#each stars.empty}}
+                        <img
+                            class="star"
+                            src="{{../star_empty}}"
+                            width="48"
+                            height="48"
+                            alt=""
+                        />
+                    {{/each}}
+                </footer>
+            </div>
+        </div>
+    </body>
+</html>

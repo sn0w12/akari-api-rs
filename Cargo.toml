@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "crates/html-to-img"]
+resolver = "3"
+
 [package]
 name = "akari-api-rs"
 version = "0.1.0"
@@ -47,3 +51,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.24.0", features = ["serde"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid", "macros"] }
+handlebars = "6.4.0"
+html-to-img = { path = "crates/html-to-img" }

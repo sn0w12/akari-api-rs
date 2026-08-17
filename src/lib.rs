@@ -11,3 +11,5 @@ pub mod models;
 pub mod openapi;
 pub mod response;
 pub mod services;
+
+include!(concat!(env!("OUT_DIR"), "/css_embed.rs"));

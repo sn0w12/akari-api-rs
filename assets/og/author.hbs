@@ -1,0 +1,56 @@
+<html>
+    <head>
+        <style>
+            {{{css}}}
+        </style>
+    </head>
+    <body style="font-family: var(--font-sans)" class="og {{theme}}">
+        <div
+            class="card"
+            style="flex-direction: row; justify-content: space-between"
+        >
+            <div
+                style="
+                    flex-grow: 1;
+                    height: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                "
+            >
+                <header
+                    style="
+                        display: flex;
+                        flex-direction: column;
+                        gap: var(--space-4);
+                        height: 100%;
+                    "
+                >
+                    <h1 style="font-size: 4rem; text-align: center;">
+                        {{title}}
+                    </h1>
+                    <div class="separator"></div>
+                    <div
+                        style="
+                            display: flex;
+                            flex-direction: row;
+                            flex-wrap: wrap;
+                            justify-content: center;
+                            gap: var(--space-4);
+                            margin-top: var(--space-2);
+                            height: 100%;
+                        "
+                    >
+                        {{#each covers}}
+                            <img
+                                src="{{this}}?width=300"
+                                height="475"
+                                style="border-radius: var(--radius-xl)"
+                            />
+                        {{/each}}
+                    </div>
+                </header>
+            </div>
+        </div>
+    </body>
+</html>
