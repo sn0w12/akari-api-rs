@@ -1,11 +1,13 @@
 # syntax=docker/dockerfile:1
 
-FROM rust:1-bookworm-slim AS builder
+FROM rust:1-slim-bookworm AS builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         pkg-config \
+        python3 \
+        curl \
         libssl-dev \
         libfontconfig1-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -18,6 +20,11 @@ COPY crates ./crates
 COPY build.rs ./build.rs
 COPY assets ./assets
 COPY src ./src
+# Test/bench/example sources must exist for the manifest to resolve
+# (even though they aren't compiled into the release binary).
+COPY benches ./benches
+COPY examples ./examples
+COPY tests ./tests
 
 RUN cargo build --release -p akari-api-rs --bin akari-api-rs
 
