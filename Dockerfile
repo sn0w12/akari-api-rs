@@ -20,10 +20,7 @@ COPY crates ./crates
 COPY build.rs ./build.rs
 COPY assets ./assets
 COPY src ./src
-# Test/bench/example sources must exist for the manifest to resolve
-# (even though they aren't compiled into the release binary).
 COPY benches ./benches
-COPY examples ./examples
 COPY tests ./tests
 
 RUN cargo build --release -p akari-api-rs --bin akari-api-rs
