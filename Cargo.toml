@@ -1,6 +1,6 @@
 [workspace]
 members = [".", "crates/html-to-img"]
-resolver = "3"
+resolver = "2"
 
 [package]
 name = "akari-api-rs"
