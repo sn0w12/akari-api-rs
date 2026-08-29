@@ -1,0 +1,7 @@
+target
+.git
+.env
+.vscode
+.freebuff
+Dockerfile
+*.md
