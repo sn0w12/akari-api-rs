@@ -315,4 +315,17 @@ async fn test_analytics_non_admin_403() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 403);
+
+    // A valid non-admin session using the __Secure- prefixed cookie is also
+    // recognized and rejected with 403 (rather than 401 for a missing token).
+    let resp = client
+        .get(format!("http://{}/v2/analytics/overview", addr))
+        .header(
+            "Cookie",
+            "__Secure-better-auth.session_token=REGULAR_USER_SESSION_TOKEN",
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
 }

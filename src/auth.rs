@@ -23,15 +23,20 @@ pub struct AdminAuthUser(pub AuthUser);
 
 pub struct OptionalAuthUser(pub Option<AuthUser>);
 
-const SESSION_COOKIE_NAME: &str = "better-auth.session_token";
+const SESSION_COOKIE_NAMES: [&str; 2] = [
+    "better-auth.session_token",
+    "__Secure-better-auth.session_token",
+];
 
 fn extract_session_token(headers: &axum::http::HeaderMap) -> Option<String> {
     let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
     for cookie in cookie_header.split(';') {
         let cookie = cookie.trim();
-        if let Some(value) = cookie.strip_prefix(&format!("{}=", SESSION_COOKIE_NAME)) {
-            let raw = value.trim();
-            return Some(raw.split('.').next().unwrap_or(raw).to_string());
+        for name in SESSION_COOKIE_NAMES {
+            if let Some(value) = cookie.strip_prefix(&format!("{}=", name)) {
+                let raw = value.trim();
+                return Some(raw.split('.').next().unwrap_or(raw).to_string());
+            }
         }
     }
     None
